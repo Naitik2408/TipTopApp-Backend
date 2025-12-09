@@ -205,11 +205,18 @@ exports.createOrder = catchAsync(async (req, res, next) => {
     },
   });
 
-  // Update menu item stats
+  // Update menu item stats for popularity tracking
   for (const item of orderItems) {
-    await MenuItem.findById(item.menuItem).then((mi) => {
-      // Analytics removed for simplified model
-    });
+    await MenuItem.findByIdAndUpdate(
+      item.menuItem,
+      {
+        $inc: {
+          'stats.totalOrders': item.quantity,
+          'stats.totalRevenue': item.subtotal,
+        },
+      },
+      { new: false }
+    );
   }
 
   // Update customer stats

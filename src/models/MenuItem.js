@@ -81,6 +81,22 @@ const menuItemSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Statistics for popularity tracking
+    stats: {
+      totalOrders: {
+        type: Number,
+        default: 0,
+      },
+      totalRevenue: {
+        type: Number,
+        default: 0,
+      },
+      popularityScore: {
+        type: Number,
+        default: 0,
+      },
+    },
   },
   {
     timestamps: true,
@@ -119,6 +135,17 @@ menuItemSchema.statics.findByCategory = function (category, options = {}) {
   return this.find(query)
     .sort(options.sort || { rating: -1 })
     .limit(options.limit || 20);
+};
+
+// Static method to find popular items based on order count
+menuItemSchema.statics.findPopular = function (limit = 10) {
+  return this.find({
+    isActive: true,
+    isAvailable: true,
+  })
+    .sort({ 'stats.totalOrders': -1, rating: -1 })
+    .limit(limit)
+    .select('name image priceVariants categories rating reviews stats');
 };
 
 module.exports = mongoose.model('MenuItem', menuItemSchema);
