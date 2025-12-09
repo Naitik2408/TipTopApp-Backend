@@ -1,0 +1,392 @@
+const mongoose = require('mongoose');
+
+// Customization Sub-schema
+const orderCustomizationSchema = new mongoose.Schema({
+  name: String,
+  options: [String],
+  additionalPrice: {
+    type: Number,
+    default: 0,
+  },
+});
+
+// Order Item Sub-schema
+const orderItemSchema = new mongoose.Schema({
+  menuItemId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'MenuItem',
+    required: true,
+  },
+  name: {
+    type: String,
+    required: true,
+  },
+  image: String,
+  description: String,
+  portion: String, // Store the portion/variant (Quarter, Half, Full, 2PCS, etc.)
+  price: {
+    type: Number,
+    required: true,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  customizations: [orderCustomizationSchema],
+  subtotal: {
+    type: Number,
+    required: true,
+  },
+});
+
+// Status History Sub-schema
+const statusHistorySchema = new mongoose.Schema({
+  status: {
+    type: String,
+    required: true,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  notes: String,
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+    },
+    coordinates: [Number],
+  },
+});
+
+// Order Schema
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: {
+      type: String,
+      required: true,
+    },
+
+    // Customer Info (snapshot)
+    customer: {
+      id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true,
+      },
+      name: String,
+      phone: String,
+      email: String,
+    },
+
+    // Order Items
+    items: [orderItemSchema],
+
+    // Pricing Breakdown
+    pricing: {
+      itemsTotal: {
+        type: Number,
+        required: true,
+      },
+      deliveryFee: {
+        type: Number,
+        default: 0,
+      },
+      platformFee: {
+        type: Number,
+        default: 0,
+      },
+      packagingFee: {
+        type: Number,
+        default: 0,
+      },
+      gst: {
+        type: Number,
+        default: 0,
+      },
+      discount: {
+        type: Number,
+        default: 0,
+      },
+      promoCode: String,
+      promoDiscount: {
+        type: Number,
+        default: 0,
+      },
+      loyaltyPointsUsed: {
+        type: Number,
+        default: 0,
+      },
+      loyaltyDiscount: {
+        type: Number,
+        default: 0,
+      },
+      finalAmount: {
+        type: Number,
+        required: true,
+      },
+      roundOff: {
+        type: Number,
+        default: 0,
+      },
+    },
+
+    // Delivery Information
+    deliveryAddress: {
+      street: String,
+      apartment: String,
+      city: String,
+      state: String,
+      zipCode: String,
+      landmark: String,
+      coordinates: {
+        type: {
+          type: String,
+          enum: ['Point'],
+          default: 'Point',
+        },
+        coordinates: {
+          type: [Number],
+          default: [0, 0],
+        },
+      },
+      deliveryInstructions: String,
+    },
+
+    // Delivery Partner
+    deliveryPartner: {
+      id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      name: String,
+      phone: String,
+      vehicleNumber: String,
+      assignedAt: Date,
+      pickedUpAt: Date,
+      deliveredAt: Date,
+    },
+
+    // Order Status & Timeline
+    status: {
+      type: String,
+      enum: ['PENDING', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
+      default: 'PENDING',
+    },
+
+    statusHistory: [statusHistorySchema],
+
+    // Payment
+    paymentMethod: {
+      type: String,
+      enum: ['ONLINE', 'COD', 'CARD', 'UPI'],
+      required: true,
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ['PENDING', 'PAID', 'FAILED', 'REFUNDED'],
+      default: 'PENDING',
+    },
+
+    paymentDetails: {
+      transactionId: String,
+      gateway: String,
+      method: String,
+      timestamp: Date,
+      receiptUrl: String,
+    },
+
+    // COD-specific
+    cashCollection: {
+      expectedAmount: Number,
+      collectedAmount: Number,
+      changeFund: Number,
+      collectedAt: Date,
+      handoverAt: Date,
+      isSettled: {
+        type: Boolean,
+        default: false,
+      },
+      settledAt: Date,
+    },
+
+    // Time Management
+    estimatedPrepTime: Number,
+    estimatedDeliveryTime: Date,
+    actualDeliveryTime: Date,
+
+    // Rating & Feedback
+    rating: {
+      food: {
+        type: Number,
+        min: 1,
+        max: 5,
+      },
+      delivery: {
+        type: Number,
+        min: 1,
+        max: 5,
+      },
+      packaging: {
+        type: Number,
+        min: 1,
+        max: 5,
+      },
+      overall: {
+        type: Number,
+        min: 1,
+        max: 5,
+      },
+      review: String,
+      images: [String],
+      createdAt: Date,
+      isPublic: {
+        type: Boolean,
+        default: true,
+      },
+    },
+
+    // Cancellation
+    cancellation: {
+      reason: String,
+      reasonCategory: String,
+      cancelledBy: {
+        type: String,
+        enum: ['customer', 'admin', 'system'],
+      },
+      timestamp: Date,
+      refundAmount: Number,
+      refundStatus: String,
+      refundedAt: Date,
+    },
+
+    // Special Instructions
+    specialInstructions: String,
+    contactlessDelivery: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Metadata for analytics & ML
+    metadata: {
+      orderSource: {
+        type: String,
+        enum: ['web', 'mobile', 'app'],
+      },
+      deviceType: String,
+      campaignId: String,
+      referralCode: String,
+      isFirstOrder: Boolean,
+      isRepeatOrder: Boolean,
+      previousOrderIds: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Order',
+        },
+      ],
+    },
+  },
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
+);
+
+// Indexes
+orderSchema.index({ orderNumber: 1 }, { unique: true });
+orderSchema.index({ 'customer.id': 1, createdAt: -1 });
+orderSchema.index({ 'deliveryPartner.id': 1, status: 1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ paymentMethod: 1, paymentStatus: 1 });
+orderSchema.index({ paymentStatus: 1 });
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ 'deliveryAddress.coordinates': '2dsphere' });
+orderSchema.index({ 'metadata.isFirstOrder': 1 });
+
+// Virtual for total items
+orderSchema.virtual('totalItems').get(function () {
+  return this.items.reduce((sum, item) => sum + item.quantity, 0);
+});
+
+// Virtual for delivery time
+orderSchema.virtual('deliveryTime').get(function () {
+  if (this.actualDeliveryTime && this.createdAt) {
+    return Math.round((this.actualDeliveryTime - this.createdAt) / 60000); // minutes
+  }
+  return null;
+});
+
+// Generate order number before saving
+orderSchema.pre('save', async function (next) {
+  if (this.isNew && !this.orderNumber) {
+    const count = await mongoose.model('Order').countDocuments();
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    this.orderNumber = `ORD_${year}${month}_${String(count + 1).padStart(6, '0')}`;
+  }
+  next();
+});
+
+// Add status to history before saving
+orderSchema.pre('save', function (next) {
+  if (this.isModified('status')) {
+    this.statusHistory.push({
+      status: this.status,
+      timestamp: new Date(),
+    });
+  }
+  next();
+});
+
+// Static method to find pending orders
+orderSchema.statics.findPending = function () {
+  return this.find({
+    status: { $in: ['PENDING', 'CONFIRMED', 'PREPARING'] },
+  }).sort({ createdAt: 1 });
+};
+
+// Static method to find orders by status
+orderSchema.statics.findByStatus = function (status) {
+  return this.find({ status }).sort({ createdAt: -1 });
+};
+
+// Static method to get customer orders
+orderSchema.statics.findByCustomer = function (customerId, limit = 20) {
+  return this.find({ 'customer.id': customerId })
+    .sort({ createdAt: -1 })
+    .limit(limit);
+};
+
+// Instance method to update status
+orderSchema.methods.updateStatus = async function (newStatus, updatedBy, notes) {
+  this.status = newStatus;
+  this.statusHistory.push({
+    status: newStatus,
+    timestamp: new Date(),
+    updatedBy,
+    notes,
+  });
+  await this.save();
+};
+
+// Instance method to assign delivery partner
+orderSchema.methods.assignDeliveryPartner = async function (partnerId, partnerDetails) {
+  this.deliveryPartner = {
+    id: partnerId,
+    name: partnerDetails.name,
+    phone: partnerDetails.phone,
+    vehicleNumber: partnerDetails.vehicleNumber,
+    assignedAt: new Date(),
+  };
+  await this.updateStatus('CONFIRMED');
+};
+
+module.exports = mongoose.model('Order', orderSchema);

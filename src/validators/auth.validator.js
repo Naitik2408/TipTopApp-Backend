@@ -1,0 +1,327 @@
+const Joi = require('joi');
+
+/**
+ * Validation schema for user registration
+ */
+exports.registerSchema = Joi.object({
+  name: Joi.alternatives()
+    .try(
+      // Accept string (will be split in controller)
+      Joi.string().trim().min(2).max(100).required().messages({
+        'string.empty': 'Name is required',
+        'string.min': 'Name must be at least 2 characters',
+        'string.max': 'Name cannot exceed 100 characters',
+      }),
+      // Or accept object (legacy support)
+      Joi.object({
+        first: Joi.string().trim().min(2).max(50).required().messages({
+          'string.empty': 'First name is required',
+          'string.min': 'First name must be at least 2 characters',
+          'string.max': 'First name cannot exceed 50 characters',
+        }),
+        last: Joi.string().trim().min(2).max(50).required().messages({
+          'string.empty': 'Last name is required',
+          'string.min': 'Last name must be at least 2 characters',
+          'string.max': 'Last name cannot exceed 50 characters',
+        }),
+      })
+    )
+    .required(),
+
+  email: Joi.string().trim().lowercase().email().required().messages({
+    'string.empty': 'Email is required',
+    'string.email': 'Please provide a valid email address',
+  }),
+
+  password: Joi.string()
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d@$!%*?&]/)
+    .required()
+    .messages({
+      'string.empty': 'Password is required',
+      'string.min': 'Password must be at least 8 characters',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.pattern.base':
+        'Password must contain at least one uppercase letter, one lowercase letter, and one number',
+    }),
+
+  phone: Joi.string()
+    .pattern(/^(\+91)?[6-9]\d{9}$/)
+    .required()
+    .messages({
+      'string.empty': 'Phone number is required',
+      'string.pattern.base':
+        'Please provide a valid 10-digit Indian phone number (with or without +91)',
+    }),
+
+  role: Joi.string().valid('customer').default('customer').messages({
+    'any.only': 'Invalid role. You can only register as a customer.',
+  }),
+
+  addresses: Joi.array()
+    .items(
+      Joi.object({
+        type: Joi.string()
+          .valid('home', 'work', 'other')
+          .default('home')
+          .messages({
+            'any.only': 'Address type must be home, work, or other',
+          }),
+        label: Joi.string().trim().max(50).messages({
+          'string.max': 'Address label cannot exceed 50 characters',
+        }),
+        street: Joi.string().trim().required().messages({
+          'string.empty': 'Street address is required',
+        }),
+        city: Joi.string().trim().required().messages({
+          'string.empty': 'City is required',
+        }),
+        state: Joi.string().trim().required().messages({
+          'string.empty': 'State is required',
+        }),
+        zipCode: Joi.string()
+          .pattern(/^\d{6}$/)
+          .required()
+          .messages({
+            'string.empty': 'Zip code is required',
+            'string.pattern.base': 'Please provide a valid 6-digit zipCode',
+          }),
+        coordinates: Joi.object({
+          type: Joi.string().valid('Point').default('Point'),
+          coordinates: Joi.array()
+            .items(Joi.number())
+            .length(2)
+            .messages({
+              'array.length': 'Coordinates must be [longitude, latitude]',
+            }),
+        }),
+        isDefault: Joi.boolean().default(false),
+      })
+    )
+    .max(5)
+    .messages({
+      'array.max': 'You can add maximum 5 addresses',
+    }),
+
+  preferences: Joi.object({
+    language: Joi.string().valid('en', 'hi').default('en'),
+    notifications: Joi.object({
+      email: Joi.boolean().default(true),
+      sms: Joi.boolean().default(true),
+      push: Joi.boolean().default(true),
+      orderUpdates: Joi.boolean().default(true),
+      promotions: Joi.boolean().default(false),
+    }),
+    dietary: Joi.array()
+      .items(Joi.string().valid('vegetarian', 'vegan', 'jain', 'halal'))
+      .unique(),
+  }),
+});
+
+/**
+ * Validation schema for user login
+ */
+exports.loginSchema = Joi.object({
+  email: Joi.string().trim().lowercase().email().required().messages({
+    'string.empty': 'Email is required',
+    'string.email': 'Please provide a valid email address',
+  }),
+
+  password: Joi.string().required().messages({
+    'string.empty': 'Password is required',
+  }),
+});
+
+/**
+ * Validation schema for refresh token
+ */
+exports.refreshTokenSchema = Joi.object({
+  refreshToken: Joi.string().required().messages({
+    'string.empty': 'Refresh token is required',
+  }),
+});
+
+/**
+ * Validation schema for forgot password
+ */
+exports.forgotPasswordSchema = Joi.object({
+  email: Joi.string().trim().lowercase().email().required().messages({
+    'string.empty': 'Email is required',
+    'string.email': 'Please provide a valid email address',
+  }),
+});
+
+/**
+ * Validation schema for reset password
+ */
+exports.resetPasswordSchema = Joi.object({
+  password: Joi.string()
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .required()
+    .messages({
+      'string.empty': 'Password is required',
+      'string.min': 'Password must be at least 8 characters',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.pattern.base':
+        'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+    }),
+});
+
+/**
+ * Validation schema for change password
+ */
+exports.changePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required().messages({
+    'string.empty': 'Current password is required',
+  }),
+
+  newPassword: Joi.string()
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .required()
+    .invalid(Joi.ref('currentPassword'))
+    .messages({
+      'string.empty': 'New password is required',
+      'string.min': 'New password must be at least 8 characters',
+      'string.max': 'New password cannot exceed 128 characters',
+      'string.pattern.base':
+        'New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+      'any.invalid': 'New password must be different from current password',
+    }),
+});
+
+/**
+ * Validation schema for verify phone OTP
+ */
+exports.verifyPhoneSchema = Joi.object({
+  otp: Joi.string()
+    .length(6)
+    .pattern(/^\d{6}$/)
+    .required()
+    .messages({
+      'string.empty': 'OTP is required',
+      'string.length': 'OTP must be 6 digits',
+      'string.pattern.base': 'OTP must contain only numbers',
+    }),
+});
+
+/**
+ * Validation schema for update profile
+ */
+exports.updateProfileSchema = Joi.object({
+  name: Joi.object({
+    first: Joi.string().trim().min(2).max(50).messages({
+      'string.min': 'First name must be at least 2 characters',
+      'string.max': 'First name cannot exceed 50 characters',
+    }),
+    last: Joi.string().trim().min(2).max(50).messages({
+      'string.min': 'Last name must be at least 2 characters',
+      'string.max': 'Last name cannot exceed 50 characters',
+    }),
+  }),
+
+  addresses: Joi.array()
+    .items(
+      Joi.object({
+        type: Joi.string()
+          .valid('home', 'work', 'other')
+          .default('home')
+          .messages({
+            'any.only': 'Address type must be home, work, or other',
+          }),
+        label: Joi.string().trim().max(50).messages({
+          'string.max': 'Address label cannot exceed 50 characters',
+        }),
+        street: Joi.string().trim().required().messages({
+          'string.empty': 'Street address is required',
+        }),
+        city: Joi.string().trim().required().messages({
+          'string.empty': 'City is required',
+        }),
+        state: Joi.string().trim().required().messages({
+          'string.empty': 'State is required',
+        }),
+        zipCode: Joi.string()
+          .pattern(/^\d{6}$/)
+          .required()
+          .messages({
+            'string.empty': 'Zip code is required',
+            'string.pattern.base': 'Please provide a valid 6-digit zipCode',
+          }),
+        coordinates: Joi.object({
+          type: Joi.string().valid('Point').default('Point'),
+          coordinates: Joi.array()
+            .items(Joi.number())
+            .length(2)
+            .messages({
+              'array.length': 'Coordinates must be [longitude, latitude]',
+            }),
+        }),
+        isDefault: Joi.boolean().default(false),
+      })
+    )
+    .max(5)
+    .messages({
+      'array.max': 'You can add maximum 5 addresses',
+    }),
+
+  preferences: Joi.object({
+    language: Joi.string().valid('en', 'hi'),
+    notifications: Joi.object({
+      email: Joi.boolean(),
+      sms: Joi.boolean(),
+      push: Joi.boolean(),
+      orderUpdates: Joi.boolean(),
+      promotions: Joi.boolean(),
+    }),
+    dietary: Joi.array()
+      .items(Joi.string().valid('vegetarian', 'vegan', 'jain', 'halal'))
+      .unique(),
+  }),
+
+  // Prevent password updates through this route
+  password: Joi.forbidden(),
+  passwordConfirm: Joi.forbidden(),
+});
+
+/**
+ * Validation schema for delete account
+ */
+exports.deleteAccountSchema = Joi.object({
+  password: Joi.string().required().messages({
+    'string.empty': 'Password is required to deactivate account',
+  }),
+});
+
+/**
+ * Middleware to validate request body
+ */
+exports.validate = schema => {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    if (error) {
+      const errors = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+      }));
+
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Validation error',
+        errors,
+      });
+    }
+
+    // Replace req.body with validated value
+    req.body = value;
+    next();
+  };
+};

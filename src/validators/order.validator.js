@@ -1,0 +1,280 @@
+const Joi = require('joi');
+
+/**
+ * Validation schema for creating an order
+ */
+exports.createOrderSchema = Joi.object({
+  items: Joi.array()
+    .items(
+      Joi.object({
+        menuItem: Joi.string()
+          .regex(/^[0-9a-fA-F]{24}$/)
+          .required()
+          .messages({
+            'string.empty': 'Menu item ID is required',
+            'string.pattern.base': 'Invalid menu item ID',
+          }),
+        menuItemId: Joi.string()
+          .regex(/^[0-9a-fA-F]{24}$/)
+          .messages({
+            'string.pattern.base': 'Invalid menu item ID',
+          }),
+        quantity: Joi.number().integer().min(1).max(50).required().messages({
+          'number.min': 'Quantity must be at least 1',
+          'number.max': 'Quantity cannot exceed 50',
+          'any.required': 'Quantity is required',
+        }),
+        price: Joi.number().min(0).messages({
+          'number.base': 'Price must be a number',
+          'number.min': 'Price cannot be negative',
+        }),
+        customizations: Joi.array().items(
+          Joi.object({
+            name: Joi.string().required(),
+            option: Joi.string().required(),
+            price: Joi.number().min(0).default(0),
+          })
+        ),
+        specialInstructions: Joi.string().trim().max(200).messages({
+          'string.max': 'Special instructions cannot exceed 200 characters',
+        }),
+      })
+    )
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'At least one item is required',
+      'any.required': 'Order items are required',
+    }),
+
+  deliveryAddress: Joi.object({
+    street: Joi.string().trim().required().messages({
+      'string.empty': 'Street address is required',
+    }),
+    apartment: Joi.string().trim(),
+    city: Joi.string().trim().required().messages({
+      'string.empty': 'City is required',
+    }),
+    state: Joi.string().trim().required().messages({
+      'string.empty': 'State is required',
+    }),
+    zipCode: Joi.string()
+      .pattern(/^\d{6}$/)
+      .required()
+      .messages({
+        'string.empty': 'Zip code is required',
+        'string.pattern.base': 'Please provide a valid 6-digit zip code',
+      }),
+    landmark: Joi.string().trim(),
+    coordinates: Joi.object({
+      type: Joi.string().valid('Point').default('Point'),
+      coordinates: Joi.array()
+        .items(Joi.number())
+        .length(2)
+        .messages({
+          'array.length': 'Coordinates must be [longitude, latitude]',
+        }),
+    }),
+  }).required(),
+
+  paymentMethod: Joi.string()
+    .valid('ONLINE', 'COD', 'CARD', 'UPI')
+    .required()
+    .messages({
+      'any.only': 'Payment method must be ONLINE, COD, CARD, or UPI',
+      'any.required': 'Payment method is required',
+    }),
+  
+  contactPhone: Joi.string().trim().messages({
+    'string.empty': 'Contact phone is required',
+  }),
+  
+  paymentDetails: Joi.object({
+    transactionId: Joi.string(),
+    gateway: Joi.string(),
+    method: Joi.string(),
+    timestamp: Joi.date(),
+  }),
+
+  scheduledFor: Joi.date().min('now').messages({
+    'date.min': 'Scheduled time must be in the future',
+  }),
+
+  specialInstructions: Joi.string().trim().max(500).messages({
+    'string.max': 'Special instructions cannot exceed 500 characters',
+  }),
+
+  promoCode: Joi.string().trim().uppercase(),
+});
+
+/**
+ * Validation schema for updating order status
+ */
+exports.updateOrderStatusSchema = Joi.object({
+  status: Joi.string()
+    .valid(
+      'pending',
+      'confirmed',
+      'preparing',
+      'ready',
+      'picked-up',
+      'out-for-delivery',
+      'delivered',
+      'cancelled'
+    )
+    .required()
+    .messages({
+      'any.only': 'Invalid order status',
+      'any.required': 'Status is required',
+    }),
+
+  notes: Joi.string().trim().max(500).messages({
+    'string.max': 'Notes cannot exceed 500 characters',
+  }),
+});
+
+/**
+ * Validation schema for cancelling an order
+ */
+exports.cancelOrderSchema = Joi.object({
+  reason: Joi.string().trim().min(5).max(500).required().messages({
+    'string.empty': 'Cancellation reason is required',
+    'string.min': 'Reason must be at least 5 characters',
+    'string.max': 'Reason cannot exceed 500 characters',
+  }),
+});
+
+/**
+ * Validation schema for assigning delivery partner
+ */
+exports.assignDeliveryPartnerSchema = Joi.object({
+  deliveryPartnerId: Joi.string()
+    .regex(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      'string.empty': 'Delivery partner ID is required',
+      'string.pattern.base': 'Invalid delivery partner ID',
+    }),
+});
+
+/**
+ * Validation schema for rating an order
+ */
+exports.rateOrderSchema = Joi.object({
+  foodRating: Joi.number().min(1).max(5).required().messages({
+    'number.min': 'Food rating must be between 1 and 5',
+    'number.max': 'Food rating must be between 1 and 5',
+    'any.required': 'Food rating is required',
+  }),
+
+  deliveryRating: Joi.number().min(1).max(5).required().messages({
+    'number.min': 'Delivery rating must be between 1 and 5',
+    'number.max': 'Delivery rating must be between 1 and 5',
+    'any.required': 'Delivery rating is required',
+  }),
+
+  packagingRating: Joi.number().min(1).max(5).required().messages({
+    'number.min': 'Packaging rating must be between 1 and 5',
+    'number.max': 'Packaging rating must be between 1 and 5',
+    'any.required': 'Packaging rating is required',
+  }),
+
+  comment: Joi.string().trim().max(1000).messages({
+    'string.max': 'Comment cannot exceed 1000 characters',
+  }),
+});
+
+/**
+ * Validation schema for order query parameters
+ */
+exports.orderQuerySchema = Joi.object({
+  // Pagination
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(10),
+
+  // Sorting
+  sort: Joi.string().pattern(/^-?[\w,.-]+$/),
+
+  // Field limiting
+  fields: Joi.string().pattern(/^[\w,.-]+$/),
+
+  // Filtering
+  status: Joi.string().valid(
+    'pending',
+    'confirmed',
+    'preparing',
+    'ready',
+    'picked-up',
+    'out-for-delivery',
+    'delivered',
+    'cancelled'
+  ),
+  paymentMethod: Joi.string().valid('cash', 'card', 'upi', 'wallet'),
+  paymentStatus: Joi.string().valid('pending', 'completed', 'failed', 'refunded'),
+
+  // Date range
+  'createdAt[gte]': Joi.date(),
+  'createdAt[lte]': Joi.date(),
+
+  // Amount range
+  'pricing.finalAmount[gte]': Joi.number().min(0),
+  'pricing.finalAmount[lte]': Joi.number().min(0),
+
+  // Allow unknown query parameters for MongoDB operators
+}).unknown(true);
+
+/**
+ * Middleware to validate request body
+ */
+exports.validate = (schema) => {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
+
+    if (error) {
+      const errors = error.details.map((detail) => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+      }));
+
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Validation error',
+        errors,
+      });
+    }
+
+    req.body = value;
+    next();
+  };
+};
+
+/**
+ * Middleware to validate query parameters
+ */
+exports.validateQuery = (schema) => {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req.query, {
+      abortEarly: false,
+      stripUnknown: false,
+    });
+
+    if (error) {
+      const errors = error.details.map((detail) => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+      }));
+
+      return res.status(400).json({
+        status: 'fail',
+        message: 'Query validation error',
+        errors,
+      });
+    }
+
+    req.query = value;
+    next();
+  };
+};
