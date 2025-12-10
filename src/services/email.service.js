@@ -136,22 +136,28 @@ class EmailService {
       const from = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
       
       logger.info(`📧 Sending email via Resend to ${to}: "${subject}"`);
+      logger.info(`   From: ${from}`);
+      logger.info(`   API Key: ${process.env.RESEND_API_KEY ? 're_***' + process.env.RESEND_API_KEY.slice(-4) : 'NOT SET'}`);
 
       const result = await this.resendClient.emails.send({
         from: from,
         to: Array.isArray(to) ? to : [to],
         subject: subject,
         html: html,
-        text: text,
       });
 
-      logger.info(`✅ Email sent successfully via Resend. ID: ${result.data?.id}`);
+      logger.info(`✅ Email sent successfully via Resend`);
+      logger.info(`   Full Response:`, JSON.stringify(result));
+      logger.info(`   Email ID: ${result.id || result.data?.id || 'N/A'}`);
+      
       return true;
     } catch (error) {
       logger.error(`❌ Failed to send email via Resend:`, {
         error: error.message,
         statusCode: error.statusCode,
-        name: error.name
+        response: error.response,
+        name: error.name,
+        fullError: JSON.stringify(error)
       });
       return false;
     }
