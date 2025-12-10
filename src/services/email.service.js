@@ -29,25 +29,26 @@ class EmailService {
       logger.info(`Initializing email service with host: ${emailHost}, port: ${emailPort}, user: ${process.env.EMAIL_USER}`);
 
       // Create transporter using environment variables
+      // Supports Gmail, Brevo (Sendinblue), SendGrid, Mailgun, etc.
       this.transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        host: process.env.EMAIL_HOST || 'smtp-relay.brevo.com', // Default to Brevo (better for production)
         port: parseInt(process.env.EMAIL_PORT) || 587,
         secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASSWORD,
         },
-        // Add connection timeout settings
+        // Connection timeout settings
         connectionTimeout: 10000, // 10 seconds
         greetingTimeout: 10000,   // 10 seconds
         socketTimeout: 15000,     // 15 seconds
-        // Add these for better Gmail compatibility
+        // TLS configuration
         tls: {
-          rejectUnauthorized: false,
+          rejectUnauthorized: process.env.NODE_ENV === 'production',
           minVersion: 'TLSv1.2'
         },
-        debug: process.env.NODE_ENV === 'development', // Enable debug logs in dev
-        logger: process.env.NODE_ENV === 'development', // Enable logger in dev
+        debug: process.env.NODE_ENV === 'development',
+        logger: process.env.NODE_ENV === 'development',
       });
 
       // Verify transporter connection
