@@ -47,14 +47,12 @@ const logger = winston.createLogger({
   ],
 });
 
-// Add console transport in development
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    })
-  );
-}
+// Always add console transport for cloud platform logs (Render, Heroku, etc.)
+logger.add(
+  new winston.transports.Console({
+    format: process.env.NODE_ENV === 'production' ? logFormat : consoleFormat,
+  })
+);
 
 // Stream for Morgan HTTP logger
 logger.stream = {

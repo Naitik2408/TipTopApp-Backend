@@ -49,6 +49,8 @@ exports.register = catchAsync(async (req, res, next) => {
     preferences,
   } = req.body;
 
+  logger.info(`[REGISTER] Attempt for email: ${email}, phone: ${phone}`);
+
   // Check if user already exists
   const existingUser = await User.findOne({
     $or: [{ 'email.address': email }, { 'phone.number': phone }],
@@ -56,9 +58,11 @@ exports.register = catchAsync(async (req, res, next) => {
 
   if (existingUser) {
     if (existingUser.email.address === email) {
+      logger.warn(`[REGISTER] Failed - Email already exists: ${email}`);
       return next(new AppError('Email is already registered.', 400));
     }
     if (existingUser.phone.number === phone) {
+      logger.warn(`[REGISTER] Failed - Phone already exists: ${phone}`);
       return next(new AppError('Phone number is already registered.', 400));
     }
   }
@@ -115,7 +119,7 @@ exports.register = catchAsync(async (req, res, next) => {
 
   const user = await User.create(userData);
 
-  logger.info(`New user registered: ${user.email.address} (${user.role})`);
+  logger.info(`[REGISTER] SUCCESS - New user created: ${user.email.address} (ID: ${user._id}, Role: ${user.role})`);
 
   // Generate 6-digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -153,8 +157,11 @@ exports.register = catchAsync(async (req, res, next) => {
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
 
+  logger.info(`[LOGIN] Attempt for email: ${email}`);
+
   // 1) Check if email and password exist
   if (!email || !password) {
+    logger.warn('[LOGIN] Failed - Missing email or password');
     return next(new AppError('Please provide email and password.', 400));
   }
 
@@ -165,12 +172,13 @@ exports.login = catchAsync(async (req, res, next) => {
 
   // 3) Check if user exists and password is correct
   if (!user || !(await user.comparePassword(password))) {
-    logger.warn(`Failed login attempt for email: ${email}`);
+    logger.warn(`[LOGIN] Failed - Incorrect credentials for email: ${email}`);
     return next(new AppError('Incorrect email or password.', 401));
   }
 
   // 4) Check if user is active
   if (!user.isActive) {
+    logger.warn(`[LOGIN] Failed - Account deactivated: ${email}`);
     return next(
       new AppError(
         'Your account has been deactivated. Please contact support.',
@@ -181,6 +189,7 @@ exports.login = catchAsync(async (req, res, next) => {
 
   // 5) Check if email is verified
   if (!user.email.isVerified) {
+    logger.warn(`[LOGIN] Failed - Email not verified: ${email}`);
     return res.status(403).json({
       status: 'error',
       message: 'Please verify your email first. Check your inbox for OTP.',
@@ -189,7 +198,7 @@ exports.login = catchAsync(async (req, res, next) => {
     });
   }
 
-  logger.info(`User logged in: ${user.email.address} (${user.role})`);
+  logger.info(`[LOGIN] SUCCESS - User logged in: ${user.email.address} (ID: ${user._id}, Role: ${user.role})`);
 
   // 5) Send token
   createSendToken(user, 200, res, 'Login successful!');
@@ -636,7 +645,10 @@ exports.updateMe = catchAsync(async (req, res, next) => {
 exports.verifyOTP = catchAsync(async (req, res, next) => {
   const { email, otp } = req.body;
 
+  logger.info(`[VERIFY-OTP] Attempt for email: ${email}`);
+
   if (!email || !otp) {
+    logger.warn('[VERIFY-OTP] Failed - Missing email or OTP');
     return next(new AppError('Please provide email and OTP.', 400));
   }
 
@@ -651,6 +663,7 @@ exports.verifyOTP = catchAsync(async (req, res, next) => {
   });
 
   if (!user) {
+    logger.warn(`[VERIFY-OTP] Failed - Invalid or expired OTP for email: ${email}`);
     return next(new AppError('Invalid or expired OTP. Please request a new one.', 400));
   }
 
@@ -660,7 +673,7 @@ exports.verifyOTP = catchAsync(async (req, res, next) => {
   user.emailVerificationExpires = undefined;
   await user.save({ validateBeforeSave: false });
 
-  logger.info(`Email verified for: ${user.email.address}`);
+  logger.info(`[VERIFY-OTP] SUCCESS - Email verified for: ${user.email.address} (ID: ${user._id})`);
 
   // Auto-login user after verification
   createSendToken(
@@ -679,7 +692,10 @@ exports.verifyOTP = catchAsync(async (req, res, next) => {
 exports.resendOTP = catchAsync(async (req, res, next) => {
   const { email } = req.body;
 
+  logger.info(`[RESEND-OTP] Request for email: ${email}`);
+
   if (!email) {
+    logger.warn('[RESEND-OTP] Failed - Missing email');
     return next(new AppError('Please provide email.', 400));
   }
 
@@ -687,11 +703,13 @@ exports.resendOTP = catchAsync(async (req, res, next) => {
   const user = await User.findOne({ 'email.address': email });
 
   if (!user) {
+    logger.warn(`[RESEND-OTP] Failed - No account found for email: ${email}`);
     return next(new AppError('No account found with this email.', 404));
   }
 
   // Check if already verified
   if (user.email.isVerified) {
+    logger.warn(`[RESEND-OTP] Failed - Email already verified: ${email}`);
     return next(new AppError('Email is already verified. You can login now.', 400));
   }
 
@@ -713,7 +731,7 @@ exports.resendOTP = catchAsync(async (req, res, next) => {
     return next(new AppError('Failed to send OTP. Please try again later.', 500));
   }
 
-  logger.info(`OTP resent to: ${user.email.address}`);
+  logger.info(`[RESEND-OTP] SUCCESS - New OTP sent to: ${user.email.address} (ID: ${user._id})`);
 
   res.status(200).json({
     status: 'success',
