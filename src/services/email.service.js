@@ -20,14 +20,19 @@ class EmailService {
     try {
       if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
         logger.warn('Email credentials not configured. Email notifications disabled.');
+        logger.warn('Please set EMAIL_USER and EMAIL_PASSWORD environment variables');
         return;
       }
+
+      const emailHost = process.env.EMAIL_HOST || 'smtp.gmail.com';
+      const emailPort = parseInt(process.env.EMAIL_PORT) || 587;
+      logger.info(`Initializing email service with host: ${emailHost}, port: ${emailPort}, user: ${process.env.EMAIL_USER}`);
 
       // Create transporter using environment variables
       this.transporter = nodemailer.createTransport({
         host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-        port: process.env.EMAIL_PORT || 587,
-        secure: false, // true for 465, false for other ports
+        port: parseInt(process.env.EMAIL_PORT) || 587,
+        secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
         auth: {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASSWORD,
@@ -36,12 +41,36 @@ class EmailService {
         connectionTimeout: 10000, // 10 seconds
         greetingTimeout: 10000,   // 10 seconds
         socketTimeout: 15000,     // 15 seconds
+        // Add these for better Gmail compatibility
+        tls: {
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2'
+        },
+        debug: process.env.NODE_ENV === 'development', // Enable debug logs in dev
+        logger: process.env.NODE_ENV === 'development', // Enable logger in dev
       });
 
-      this.enabled = true;
-      logger.info('Email transporter initialized successfully');
+      // Verify transporter connection
+      this.transporter.verify((error, success) => {
+        if (error) {
+          logger.error('❌ Email transporter verification FAILED:', error.message);
+          logger.error('Error code:', error.code);
+          logger.error('Error details:', error);
+          logger.warn('Common issues:');
+          logger.warn('1. Gmail requires "App Password" (not regular password)');
+          logger.warn('2. Enable 2-Step Verification, then create App Password at: https://myaccount.google.com/apppasswords');
+          logger.warn('3. Check if "Less secure app access" is enabled (deprecated by Gmail)');
+          logger.warn('4. Verify EMAIL_USER and EMAIL_PASSWORD are set correctly in environment');
+          this.enabled = false;
+        } else {
+          logger.info('✅ Email transporter verified and ready to send emails');
+          this.enabled = true;
+        }
+      });
+
     } catch (error) {
       logger.error('Failed to initialize email transporter:', error);
+      this.enabled = false;
     }
   }
 
@@ -60,11 +89,18 @@ class EmailService {
         text,
       };
 
+      logger.info(`Attempting to send email to ${to} with subject: "${subject}"`);
       const info = await this.transporter.sendMail(mailOptions);
-      logger.info(`Email sent successfully to ${to}:`, info.messageId);
+      logger.info(`✅ Email sent successfully to ${to}. MessageId: ${info.messageId}`);
       return true;
     } catch (error) {
-      logger.error('Failed to send email:', error);
+      logger.error(`❌ Failed to send email to ${to}:`, {
+        error: error.message,
+        code: error.code,
+        command: error.command,
+        responseCode: error.responseCode,
+        response: error.response
+      });
       return false;
     }
   }
