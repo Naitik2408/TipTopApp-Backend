@@ -1,18 +1,57 @@
 const logger = require('../utils/logger');
 
+// Try to load email libraries
 let nodemailer;
+let Resend;
+
 try {
   nodemailer = require('nodemailer');
 } catch (error) {
-  logger.warn('nodemailer not installed. Email functionality will be disabled. Install with: npm install nodemailer');
+  logger.warn('nodemailer not installed. SMTP functionality disabled.');
+}
+
+try {
+  const { Resend: ResendClient } = require('resend');
+  Resend = ResendClient;
+} catch (error) {
+  logger.warn('resend not installed. API email functionality disabled.');
 }
 
 class EmailService {
   constructor() {
     this.transporter = null;
+    this.resendClient = null;
     this.enabled = false;
-    if (nodemailer) {
+    this.provider = null;
+    this.initialize();
+  }
+
+  initialize() {
+    // Try Resend first (modern, API-based, works everywhere)
+    if (process.env.RESEND_API_KEY && Resend) {
+      this.initializeResend();
+    }
+    // Fallback to SMTP (Brevo, Gmail, etc.)
+    else if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD && nodemailer) {
       this.initializeTransporter();
+    }
+    else {
+      logger.warn('❌ Email service not configured. Set either:');
+      logger.warn('   1. RESEND_API_KEY (recommended - works everywhere)');
+      logger.warn('   2. EMAIL_USER + EMAIL_PASSWORD (SMTP - may be blocked)');
+    }
+  }
+
+  initializeResend() {
+    try {
+      this.resendClient = new Resend(process.env.RESEND_API_KEY);
+      this.provider = 'resend';
+      this.enabled = true;
+      logger.info('✅ Email service initialized with Resend (API-based)');
+      logger.info('   From: ' + (process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'));
+    } catch (error) {
+      logger.error('Failed to initialize Resend:', error);
+      this.enabled = false;
     }
   }
 
@@ -54,30 +93,73 @@ class EmailService {
       // Verify transporter connection
       this.transporter.verify((error, success) => {
         if (error) {
-          logger.error('❌ Email transporter verification FAILED:', error.message);
+          logger.error('❌ SMTP verification FAILED:', error.message);
           logger.error('Error code:', error.code);
-          logger.error('Error details:', error);
-          logger.warn('Common issues:');
-          logger.warn('1. Gmail requires "App Password" (not regular password)');
-          logger.warn('2. Enable 2-Step Verification, then create App Password at: https://myaccount.google.com/apppasswords');
-          logger.warn('3. Check if "Less secure app access" is enabled (deprecated by Gmail)');
-          logger.warn('4. Verify EMAIL_USER and EMAIL_PASSWORD are set correctly in environment');
+          logger.warn('💡 Consider using Resend instead (set RESEND_API_KEY)');
+          logger.warn('   Resend works everywhere, no SMTP blocks!');
           this.enabled = false;
         } else {
-          logger.info('✅ Email transporter verified and ready to send emails');
+          logger.info('✅ SMTP transporter verified and ready');
+          this.provider = 'smtp';
           this.enabled = true;
         }
       });
 
     } catch (error) {
-      logger.error('Failed to initialize email transporter:', error);
+      logger.error('Failed to initialize SMTP transporter:', error);
       this.enabled = false;
     }
   }
 
   async sendEmail({ to, subject, html, text }) {
-    if (!this.enabled || !this.transporter) {
+    if (!this.enabled) {
       logger.warn('Email service not available. Skipping email send.');
+      return false;
+    }
+
+    // Use Resend if configured
+    if (this.provider === 'resend') {
+      return this.sendWithResend({ to, subject, html, text });
+    }
+
+    // Use SMTP if configured
+    if (this.provider === 'smtp') {
+      return this.sendWithSMTP({ to, subject, html, text });
+    }
+
+    logger.error('No email provider configured');
+    return false;
+  }
+
+  async sendWithResend({ to, subject, html, text }) {
+    try {
+      const from = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+      
+      logger.info(`📧 Sending email via Resend to ${to}: "${subject}"`);
+
+      const result = await this.resendClient.emails.send({
+        from: from,
+        to: Array.isArray(to) ? to : [to],
+        subject: subject,
+        html: html,
+        text: text,
+      });
+
+      logger.info(`✅ Email sent successfully via Resend. ID: ${result.data?.id}`);
+      return true;
+    } catch (error) {
+      logger.error(`❌ Failed to send email via Resend:`, {
+        error: error.message,
+        statusCode: error.statusCode,
+        name: error.name
+      });
+      return false;
+    }
+  }
+
+  async sendWithSMTP({ to, subject, html, text }) {
+    if (!this.transporter) {
+      logger.warn('SMTP transporter not available.');
       return false;
     }
 
@@ -90,9 +172,9 @@ class EmailService {
         text,
       };
 
-      logger.info(`Attempting to send email to ${to} with subject: "${subject}"`);
+      logger.info(`📧 Sending email via SMTP to ${to}: "${subject}"`);
       const info = await this.transporter.sendMail(mailOptions);
-      logger.info(`✅ Email sent successfully to ${to}. MessageId: ${info.messageId}`);
+      logger.info(`✅ Email sent successfully via SMTP. MessageId: ${info.messageId}`);
       return true;
     } catch (error) {
       logger.error(`❌ Failed to send email to ${to}:`, {
