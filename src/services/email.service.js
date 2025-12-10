@@ -32,6 +32,10 @@ class EmailService {
           user: process.env.EMAIL_USER,
           pass: process.env.EMAIL_PASSWORD,
         },
+        // Add connection timeout settings
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 10000,   // 10 seconds
+        socketTimeout: 15000,     // 15 seconds
       });
 
       this.enabled = true;

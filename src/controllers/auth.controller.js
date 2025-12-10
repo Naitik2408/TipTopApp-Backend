@@ -130,24 +130,30 @@ exports.register = catchAsync(async (req, res, next) => {
   user.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   await user.save({ validateBeforeSave: false });
 
-  // Send OTP email
-  const emailService = require('../services/email.service');
-  const emailSent = await emailService.sendVerificationOTP(user.email.address, user.name, otp);
-  
-  if (!emailSent) {
-    logger.warn('Failed to send verification email, but user created');
-  }
-
-  // Return user ID and email (don't auto-login unverified users)
+  // Return response immediately (don't wait for email)
   res.status(201).json({
     status: 'success',
     message: 'Account created! Please check your email for OTP.',
     data: {
       userId: user._id,
       email: user.email.address,
-      otpSent: emailSent,
+      otpSent: true, // Always return true since we're sending async
     },
   });
+
+  // Send OTP email asynchronously (non-blocking)
+  const emailService = require('../services/email.service');
+  emailService.sendVerificationOTP(user.email.address, user.name, otp)
+    .then(emailSent => {
+      if (emailSent) {
+        logger.info(`[REGISTER] OTP email sent successfully to: ${user.email.address}`);
+      } else {
+        logger.warn(`[REGISTER] Failed to send OTP email to: ${user.email.address}`);
+      }
+    })
+    .catch(err => {
+      logger.error(`[REGISTER] Error sending OTP email to: ${user.email.address}`, err);
+    });
 });
 
 /**
@@ -722,17 +728,9 @@ exports.resendOTP = catchAsync(async (req, res, next) => {
   user.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   await user.save({ validateBeforeSave: false });
 
-  // Send OTP email
-  const emailService = require('../services/email.service');
-  const emailSent = await emailService.sendVerificationOTP(user.email.address, user.name, otp);
+  logger.info(`[RESEND-OTP] SUCCESS - OTP regenerated for: ${user.email.address} (ID: ${user._id})`);
 
-  if (!emailSent) {
-    logger.error(`Failed to send OTP email to: ${email}`);
-    return next(new AppError('Failed to send OTP. Please try again later.', 500));
-  }
-
-  logger.info(`[RESEND-OTP] SUCCESS - New OTP sent to: ${user.email.address} (ID: ${user._id})`);
-
+  // Return response immediately
   res.status(200).json({
     status: 'success',
     message: 'New OTP sent to your email!',
@@ -741,6 +739,20 @@ exports.resendOTP = catchAsync(async (req, res, next) => {
       expiresIn: '10 minutes',
     },
   });
+
+  // Send OTP email asynchronously (non-blocking)
+  const emailService = require('../services/email.service');
+  emailService.sendVerificationOTP(user.email.address, user.name, otp)
+    .then(emailSent => {
+      if (emailSent) {
+        logger.info(`[RESEND-OTP] Email sent successfully to: ${user.email.address}`);
+      } else {
+        logger.warn(`[RESEND-OTP] Failed to send email to: ${user.email.address}`);
+      }
+    })
+    .catch(err => {
+      logger.error(`[RESEND-OTP] Error sending email to: ${user.email.address}`, err);
+    });
 });
 
 /**
