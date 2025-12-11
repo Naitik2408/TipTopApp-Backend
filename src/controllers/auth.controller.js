@@ -143,7 +143,7 @@ exports.register = catchAsync(async (req, res, next) => {
 
   // Send OTP email asynchronously (non-blocking)
   const emailService = require('../services/email.service');
-  emailService.sendVerificationOTP(user.email.address, user.name, otp)
+  emailService.sendOTPEmail(user.email.address, otp, user.name)
     .then(emailSent => {
       if (emailSent) {
         logger.info(`[REGISTER] OTP email sent successfully to: ${user.email.address}`);
@@ -740,18 +740,18 @@ exports.resendOTP = catchAsync(async (req, res, next) => {
     },
   });
 
-  // Send OTP email asynchronously (non-blocking)
+  // Send OTP email asynchronously
   const emailService = require('../services/email.service');
-  emailService.sendVerificationOTP(user.email.address, user.name, otp)
+  emailService.sendOTPEmail(user.email.address, otp, user.name)
     .then(emailSent => {
       if (emailSent) {
-        logger.info(`[RESEND-OTP] Email sent successfully to: ${user.email.address}`);
+        logger.info(`[RESEND-OTP] OTP email sent successfully to: ${user.email.address}`);
       } else {
-        logger.warn(`[RESEND-OTP] Failed to send email to: ${user.email.address}`);
+        logger.warn(`[RESEND-OTP] Failed to send OTP email to: ${user.email.address}`);
       }
     })
     .catch(err => {
-      logger.error(`[RESEND-OTP] Error sending email to: ${user.email.address}`, err);
+      logger.error(`[RESEND-OTP] Error sending OTP email to: ${user.email.address}`, err);
     });
 });
 
