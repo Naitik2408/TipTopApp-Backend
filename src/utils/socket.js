@@ -246,6 +246,28 @@ const emitAdminStats = (stats) => {
 };
 
 /**
+ * Emit new order notification to admins
+ */
+const emitNewOrder = (order) => {
+  if (!io) return;
+  
+  // Notify all admins about new order
+  io.to('role:admin').emit('order:new', {
+    _id: order._id,
+    orderNumber: order.orderNumber,
+    customer: order.customer,
+    items: order.items,
+    pricing: order.pricing,
+    deliveryAddress: order.deliveryAddress,
+    status: order.status,
+    createdAt: order.createdAt,
+    timestamp: new Date(),
+  });
+
+  logger.info(`New order notification emitted for order ${order.orderNumber}`);
+};
+
+/**
  * Get Socket.IO instance
  */
 const getIO = () => {
@@ -258,6 +280,7 @@ const getIO = () => {
 module.exports = {
   initializeSocket,
   emitOrderUpdate,
+  emitNewOrder,
   emitUserNotification,
   emitRoleNotification,
   emitAdminStats,

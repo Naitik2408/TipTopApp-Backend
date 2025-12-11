@@ -6,7 +6,7 @@ const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
 const APIFeatures = require('../utils/APIFeatures');
 const logger = require('../utils/logger');
-const { emitOrderUpdate, emitUserNotification } = require('../utils/socket');
+const { emitOrderUpdate, emitUserNotification, emitNewOrder } = require('../utils/socket');
 const emailService = require('../services/email.service');
 const notificationService = require('../services/notification.service');
 
@@ -229,7 +229,7 @@ exports.createOrder = catchAsync(async (req, res, next) => {
     `Order created: ${order.orderNumber} by ${req.user.email.address} - Amount: ₹${finalAmount}`
   );
 
-  // Emit real-time notification to admins about new order
+  // Emit real-time notification to customer
   try {
     emitUserNotification(req.user._id.toString(), {
       type: 'order_placed',
@@ -238,23 +238,61 @@ exports.createOrder = catchAsync(async (req, res, next) => {
       orderId: order._id,
     });
   } catch (err) {
-    logger.warn('Failed to emit order notification:', err.message);
+    logger.warn('Failed to emit customer notification:', err.message);
+  }
+
+  // Emit new order event to all admins (for web notifications)
+  try {
+    emitNewOrder(order);
+  } catch (err) {
+    logger.warn('Failed to emit new order event:', err.message);
   }
 
   // Send push notification to customer (iOS & Android)
   try {
     const deviceTokens = req.user.getActiveDeviceTokens();
     if (deviceTokens && deviceTokens.length > 0) {
-      logger.info(`Sending push notification to ${deviceTokens.length} device(s) for order ${order.orderNumber}`);
+      logger.info(`[CUSTOMER NOTIFICATION] Sending to ${deviceTokens.length} device(s) for order ${order.orderNumber}`);
       
       for (const token of deviceTokens) {
         await notificationService.sendOrderNotification(order, token);
       }
     } else {
-      logger.info(`No active device tokens found for user ${req.user._id}`);
+      logger.info(`[CUSTOMER NOTIFICATION] No active device tokens found for user ${req.user._id}`);
     }
   } catch (err) {
-    logger.warn('Failed to send push notification:', err.message);
+    logger.warn('[CUSTOMER NOTIFICATION] Failed to send push notification:', err.message);
+  }
+
+  // Send notification to all admins
+  try {
+    const admins = await User.find({ role: 'admin', isActive: true });
+    logger.info(`[ADMIN NOTIFICATION] Found ${admins.length} active admin(s)`);
+    
+    for (const admin of admins) {
+      const adminTokens = admin.getActiveDeviceTokens();
+      if (adminTokens && adminTokens.length > 0) {
+        logger.info(`[ADMIN NOTIFICATION] Sending to admin ${admin.email.address} on ${adminTokens.length} device(s)`);
+        
+        for (const token of adminTokens) {
+          await notificationService.sendCustomNotification(
+            token,
+            '🔔 New Order Received!',
+            `Order #${order.orderNumber} - ${order.customer.name} - ₹${order.pricing.finalAmount.toFixed(2)}`,
+            {
+              type: 'NEW_ORDER',
+              orderId: order._id.toString(),
+              orderNumber: order.orderNumber,
+              customerName: order.customer.name,
+              amount: order.pricing.finalAmount.toString(),
+              itemCount: order.items.length.toString(),
+            }
+          );
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('[ADMIN NOTIFICATION] Failed to send push notification:', err.message);
   }
 
   // Send email notification to configured emails
@@ -522,6 +560,35 @@ exports.assignDeliveryPartner = catchAsync(async (req, res, next) => {
   logger.info(
     `Order ${order.orderNumber} assigned to ${deliveryPartner.name.first} ${deliveryPartner.name.last} by ${req.user.email.address}`
   );
+
+  // Send push notification to delivery partner
+  try {
+    const deliveryTokens = deliveryPartner.getActiveDeviceTokens();
+    if (deliveryTokens && deliveryTokens.length > 0) {
+      logger.info(`[DELIVERY NOTIFICATION] Sending to ${deliveryTokens.length} device(s) for delivery partner ${deliveryPartner.email.address}`);
+      
+      for (const token of deliveryTokens) {
+        await notificationService.sendCustomNotification(
+          token,
+          '📦 New Delivery Assigned!',
+          `Order #${order.orderNumber} - ${order.customer.name} - ₹${order.pricing.finalAmount.toFixed(2)}`,
+          {
+            type: 'DELIVERY_ASSIGNED',
+            orderId: order._id.toString(),
+            orderNumber: order.orderNumber,
+            customerName: order.customer.name,
+            customerPhone: order.customer.phone,
+            deliveryAddress: JSON.stringify(order.deliveryAddress),
+            amount: order.pricing.finalAmount.toString(),
+          }
+        );
+      }
+    } else {
+      logger.info(`[DELIVERY NOTIFICATION] No active device tokens found for delivery partner ${deliveryPartner._id}`);
+    }
+  } catch (err) {
+    logger.warn('[DELIVERY NOTIFICATION] Failed to send push notification:', err.message);
+  }
 
   res.status(200).json({
     status: 'success',
