@@ -200,6 +200,30 @@ const userSchema = new mongoose.Schema(
     emailVerificationToken: String,
     emailVerificationExpires: Date,
 
+    // Push Notification Tokens (FCM)
+    deviceTokens: [
+      {
+        token: {
+          type: String,
+          required: true,
+        },
+        platform: {
+          type: String,
+          enum: ['ios', 'android', 'web'],
+          required: true,
+        },
+        deviceId: String,
+        lastUsed: {
+          type: Date,
+          default: Date.now,
+        },
+        isActive: {
+          type: Boolean,
+          default: true,
+        },
+      },
+    ],
+
     // Preferences
     preferences: {
       language: {
@@ -359,6 +383,44 @@ userSchema.methods.generateRefreshToken = function () {
 userSchema.methods.updateLastLogin = async function () {
   this.lastLogin = new Date();
   await this.save({ validateBeforeSave: false });
+};
+
+// Add or update device token for push notifications
+userSchema.methods.addDeviceToken = async function (token, platform, deviceId) {
+  // Check if token already exists
+  const existingToken = this.deviceTokens.find(dt => dt.token === token);
+  
+  if (existingToken) {
+    // Update existing token
+    existingToken.lastUsed = new Date();
+    existingToken.isActive = true;
+    existingToken.platform = platform;
+    if (deviceId) existingToken.deviceId = deviceId;
+  } else {
+    // Add new token
+    this.deviceTokens.push({
+      token,
+      platform,
+      deviceId,
+      lastUsed: new Date(),
+      isActive: true,
+    });
+  }
+  
+  await this.save({ validateBeforeSave: false });
+};
+
+// Remove device token
+userSchema.methods.removeDeviceToken = async function (token) {
+  this.deviceTokens = this.deviceTokens.filter(dt => dt.token !== token);
+  await this.save({ validateBeforeSave: false });
+};
+
+// Get active device tokens
+userSchema.methods.getActiveDeviceTokens = function () {
+  return this.deviceTokens
+    .filter(dt => dt.isActive)
+    .map(dt => dt.token);
 };
 
 // Static method to find available delivery partners

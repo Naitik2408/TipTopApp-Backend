@@ -8,6 +8,7 @@ const APIFeatures = require('../utils/APIFeatures');
 const logger = require('../utils/logger');
 const { emitOrderUpdate, emitUserNotification } = require('../utils/socket');
 const emailService = require('../services/email.service');
+const notificationService = require('../services/notification.service');
 
 /**
  * Create new order
@@ -238,6 +239,22 @@ exports.createOrder = catchAsync(async (req, res, next) => {
     });
   } catch (err) {
     logger.warn('Failed to emit order notification:', err.message);
+  }
+
+  // Send push notification to customer (iOS & Android)
+  try {
+    const deviceTokens = req.user.getActiveDeviceTokens();
+    if (deviceTokens && deviceTokens.length > 0) {
+      logger.info(`Sending push notification to ${deviceTokens.length} device(s) for order ${order.orderNumber}`);
+      
+      for (const token of deviceTokens) {
+        await notificationService.sendOrderNotification(order, token);
+      }
+    } else {
+      logger.info(`No active device tokens found for user ${req.user._id}`);
+    }
+  } catch (err) {
+    logger.warn('Failed to send push notification:', err.message);
   }
 
   // Send email notification to configured emails

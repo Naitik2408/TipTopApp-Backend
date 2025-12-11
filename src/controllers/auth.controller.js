@@ -858,3 +858,54 @@ exports.deleteMe = catchAsync(async (req, res, next) => {
     message: 'Account deactivated successfully.',
   });
 });
+
+/**
+ * Register or update device token for push notifications
+ * POST /api/v1/auth/device-token
+ */
+exports.registerDeviceToken = catchAsync(async (req, res, next) => {
+  const { token, platform, deviceId } = req.body;
+
+  if (!token || !platform) {
+    return next(new AppError('Device token and platform are required', 400));
+  }
+
+  if (!['ios', 'android', 'web'].includes(platform)) {
+    return next(new AppError('Invalid platform. Must be ios, android, or web', 400));
+  }
+
+  const user = await User.findById(req.user._id);
+  await user.addDeviceToken(token, platform, deviceId);
+
+  logger.info(`Device token registered for user ${user.email.address} - Platform: ${platform}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Device token registered successfully',
+    data: {
+      tokensCount: user.deviceTokens.length,
+    },
+  });
+});
+
+/**
+ * Remove device token
+ * DELETE /api/v1/auth/device-token
+ */
+exports.removeDeviceToken = catchAsync(async (req, res, next) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return next(new AppError('Device token is required', 400));
+  }
+
+  const user = await User.findById(req.user._id);
+  await user.removeDeviceToken(token);
+
+  logger.info(`Device token removed for user ${user.email.address}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Device token removed successfully',
+  });
+});

@@ -123,4 +123,10 @@ router.post(
   authController.verifyPhone
 );
 
+// Register/Update device token for push notifications
+router.post('/device-token', authController.registerDeviceToken);
+
+// Remove device token
+router.delete('/device-token', authController.removeDeviceToken);
+
 module.exports = router;
