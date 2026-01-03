@@ -226,56 +226,83 @@ exports.createOrder = catchAsync(async (req, res, next) => {
   await req.user.save({ validateBeforeSave: false });
 
   logger.info(
-    `Order created: ${order.orderNumber} by ${req.user.email.address} - Amount: ₹${finalAmount}`
+    `✅ Order created: ${order.orderNumber} by ${req.user.email.address} - Amount: ₹${finalAmount}`
   );
+
+  // ═══════════════════════════════════════════════════════════════
+  // NOTIFICATION FLOW DEBUGGING
+  // ═══════════════════════════════════════════════════════════════
+  
+  logger.info('\n🔔 ===== STARTING NOTIFICATION PROCESS =====');
+  logger.info(`📦 Order: ${order.orderNumber}`);
+  logger.info(`👤 Customer: ${req.user.email.address} (ID: ${req.user._id})`);
+  logger.info(`💰 Amount: ₹${finalAmount}`);
 
   // Emit real-time notification to customer
   try {
+    logger.info('\n📡 [WEBSOCKET] Emitting to customer...');
     emitUserNotification(req.user._id.toString(), {
       type: 'order_placed',
       title: 'Order Placed Successfully',
       message: `Your order ${order.orderNumber} has been placed successfully`,
       orderId: order._id,
     });
+    logger.info('✅ [WEBSOCKET] Customer notification emitted');
   } catch (err) {
-    logger.warn('Failed to emit customer notification:', err.message);
+    logger.error('❌ [WEBSOCKET] Failed to emit customer notification:', err.message);
   }
 
   // Emit new order event to all admins (for web notifications)
   try {
+    logger.info('\n📡 [WEBSOCKET] Emitting to admins...');
     emitNewOrder(order);
+    logger.info('✅ [WEBSOCKET] Admin notification emitted');
   } catch (err) {
-    logger.warn('Failed to emit new order event:', err.message);
+    logger.error('❌ [WEBSOCKET] Failed to emit new order event:', err.message);
   }
 
   // Send push notification to customer (iOS & Android)
   try {
+    logger.info('\n📱 [PUSH NOTIFICATION] Checking customer device tokens...');
     const deviceTokens = req.user.getActiveDeviceTokens();
+    logger.info(`📱 [PUSH] Customer has ${deviceTokens ? deviceTokens.length : 0} active device token(s)`);
+    
     if (deviceTokens && deviceTokens.length > 0) {
-      logger.info(`[CUSTOMER NOTIFICATION] Sending to ${deviceTokens.length} device(s) for order ${order.orderNumber}`);
+      logger.info(`📱 [PUSH] Device tokens:`, deviceTokens.map((t, i) => `Token ${i + 1}: ${t.substring(0, 30)}...`));
+      logger.info(`📱 [PUSH] Sending notification to ${deviceTokens.length} device(s) for order ${order.orderNumber}`);
       
-      for (const token of deviceTokens) {
-        await notificationService.sendOrderNotification(order, token);
+      for (let i = 0; i < deviceTokens.length; i++) {
+        const token = deviceTokens[i];
+        logger.info(`📱 [PUSH] Sending to device ${i + 1}/${deviceTokens.length}...`);
+        const result = await notificationService.sendOrderNotification(order, token);
+        if (result) {
+          logger.info(`✅ [PUSH] Successfully sent to device ${i + 1}`);
+        } else {
+          logger.error(`❌ [PUSH] Failed to send to device ${i + 1}`);
+        }
       }
     } else {
-      logger.info(`[CUSTOMER NOTIFICATION] No active device tokens found for user ${req.user._id}`);
+      logger.warn(`⚠️  [PUSH] No active device tokens found for user ${req.user._id}`);
+      logger.warn(`⚠️  [PUSH] User needs to login to mobile app to register device token`);
     }
   } catch (err) {
-    logger.warn('[CUSTOMER NOTIFICATION] Failed to send push notification:', err.message);
+    logger.error('❌ [PUSH] Failed to send push notification:', err.message);
+    logger.error('❌ [PUSH] Stack trace:', err.stack);
   }
 
   // Send notification to all admins
   try {
+    logger.info('\n👨‍💼 [ADMIN PUSH] Checking admin users...');
     const admins = await User.find({ role: 'admin', isActive: true });
-    logger.info(`[ADMIN NOTIFICATION] Found ${admins.length} active admin(s)`);
+    logger.info(`👨‍💼 [ADMIN PUSH] Found ${admins.length} active admin(s)`);
     
     for (const admin of admins) {
       const adminTokens = admin.getActiveDeviceTokens();
+      logger.info(`👨‍💼 [ADMIN PUSH] Admin ${admin.email.address} has ${adminTokens ? adminTokens.length : 0} device token(s)`);
+      
       if (adminTokens && adminTokens.length > 0) {
-        logger.info(`[ADMIN NOTIFICATION] Sending to admin ${admin.email.address} on ${adminTokens.length} device(s)`);
-        
         for (const token of adminTokens) {
-          await notificationService.sendCustomNotification(
+          const result = await notificationService.sendCustomNotification(
             token,
             '🔔 New Order Received!',
             `Order #${order.orderNumber} - ${order.customer.name} - ₹${order.pricing.finalAmount.toFixed(2)}`,
@@ -288,35 +315,72 @@ exports.createOrder = catchAsync(async (req, res, next) => {
               itemCount: order.items.length.toString(),
             }
           );
+          if (result) {
+            logger.info(`✅ [ADMIN PUSH] Notification sent to ${admin.email.address}`);
+          } else {
+            logger.error(`❌ [ADMIN PUSH] Failed to send to ${admin.email.address}`);
+          }
         }
       }
     }
   } catch (err) {
-    logger.warn('[ADMIN NOTIFICATION] Failed to send push notification:', err.message);
+    logger.error('❌ [ADMIN PUSH] Failed to send push notification:', err.message);
   }
 
   // Send email notification to configured emails
   try {
+    logger.info('\n📧 [EMAIL ADMIN] Checking notification emails...');
     if (settings.notificationEmails && settings.notificationEmails.length > 0) {
-      await emailService.sendNewOrderNotification(
-        {
-          orderNumber: order.orderNumber,
-          customer: order.customer,
-          items: orderItems,
-          pricing: order.pricing,
-          deliveryAddress: order.deliveryAddress,
-          paymentMethod: order.paymentMethod,
-          status: order.status,
-          notes: order.specialInstructions,
-        },
-        settings.notificationEmails
-      );
-      logger.info(`Order notification emails sent to: ${settings.notificationEmails.join(', ')}`);
+      logger.info(`📧 [EMAIL ADMIN] Sending to: ${settings.notificationEmails.join(', ')}`);
+      // Admin emails can be sent using sendEmail method with custom content
+      for (const email of settings.notificationEmails) {
+        await emailService.sendOrderConfirmation(orderDetails, email);
+      }
+      logger.info(`✅ [EMAIL ADMIN] Order notification emails sent to: ${settings.notificationEmails.join(', ')}`);
+    } else {
+      logger.info(`ℹ️  [EMAIL ADMIN] No notification emails configured`);
     }
   } catch (err) {
-    logger.error('Failed to send order notification email:', err.message);
+    logger.error('❌ [EMAIL ADMIN] Failed to send order notification email:', err.message);
     // Don't fail the order creation if email fails
   }
+
+  // Send order confirmation email to customer
+  try {
+    logger.info('\n📧 [EMAIL CUSTOMER] Sending order confirmation...');
+    const customerEmail = req.user.email.address;
+    logger.info(`📧 [EMAIL CUSTOMER] Recipient: ${customerEmail}`);
+    
+    const result = await emailService.sendOrderConfirmation(customerEmail, {
+      orderNumber: order.orderNumber,
+      customer: {
+        name: `${req.user.name.first} ${req.user.name.last}`,
+        phone: req.user.phone,
+      },
+      items: orderItems.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        subtotal: item.subtotal,
+        portion: item.portion,
+      })),
+      pricing: order.pricing,
+      deliveryAddress: order.deliveryAddress,
+      estimatedDeliveryTime: order.estimatedDeliveryTime,
+    });
+    
+    if (result) {
+      logger.info(`✅ [EMAIL CUSTOMER] Order confirmation email sent to: ${customerEmail}`);
+    } else {
+      logger.error(`❌ [EMAIL CUSTOMER] Failed to send email to: ${customerEmail}`);
+    }
+  } catch (err) {
+    logger.error('❌ [EMAIL CUSTOMER] Failed to send order confirmation email:', err.message);
+    logger.error('❌ [EMAIL CUSTOMER] Stack trace:', err.stack);
+    // Don't fail the order creation if email fails
+  }
+
+  logger.info('\n🔔 ===== NOTIFICATION PROCESS COMPLETE =====\n');
 
   res.status(201).json({
     status: 'success',
@@ -473,6 +537,74 @@ exports.updateOrderStatus = catchAsync(async (req, res, next) => {
     logger.warn('Failed to emit status update:', err.message);
   }
 
+  // Send push notifications based on status
+  try {
+    const customer = await User.findById(order.customer.id);
+    if (customer) {
+      const customerTokens = customer.getActiveDeviceTokens();
+      
+      if (customerTokens && customerTokens.length > 0) {
+        logger.info(`[STATUS UPDATE NOTIFICATION] Sending to customer on ${customerTokens.length} device(s) - Status: ${status}`);
+        
+        // Map status to notification messages
+        const statusNotifications = {
+          'CONFIRMED': {
+            title: '✅ Order Confirmed!',
+            body: `Your order #${order.orderNumber} has been confirmed and is being prepared.`,
+            type: 'ORDER_CONFIRMED'
+          },
+          'PREPARING': {
+            title: '👨‍🍳 Order Preparing',
+            body: `Your order #${order.orderNumber} is being prepared by our kitchen.`,
+            type: 'ORDER_PREPARING'
+          },
+          'READY': {
+            title: '🎉 Order Ready!',
+            body: `Your order #${order.orderNumber} is ready for pickup!`,
+            type: 'ORDER_READY'
+          },
+          'OUT_FOR_DELIVERY': {
+            title: '🚚 Out for Delivery!',
+            body: `Your order #${order.orderNumber} is on its way to you!`,
+            type: 'ORDER_OUT_FOR_DELIVERY'
+          },
+          'DELIVERED': {
+            title: '✅ Order Delivered!',
+            body: `Your order #${order.orderNumber} has been delivered. Enjoy your meal!`,
+            type: 'ORDER_DELIVERED'
+          },
+          'CANCELLED': {
+            title: '❌ Order Cancelled',
+            body: `Your order #${order.orderNumber} has been cancelled.`,
+            type: 'ORDER_CANCELLED'
+          }
+        };
+        
+        const notification = statusNotifications[status];
+        if (notification) {
+          for (const token of customerTokens) {
+            await notificationService.sendCustomNotification(
+              token,
+              notification.title,
+              notification.body,
+              {
+                type: notification.type,
+                orderId: order._id.toString(),
+                orderNumber: order.orderNumber,
+                status: status,
+                timestamp: new Date().toISOString(),
+              }
+            );
+          }
+        }
+      } else {
+        logger.info(`[STATUS UPDATE NOTIFICATION] No active device tokens for customer ${customer._id}`);
+      }
+    }
+  } catch (err) {
+    logger.warn('[STATUS UPDATE NOTIFICATION] Failed to send push notification:', err.message);
+  }
+
   res.status(200).json({
     status: 'success',
     message: 'Order status updated successfully',
@@ -519,6 +651,35 @@ exports.cancelOrder = catchAsync(async (req, res, next) => {
   logger.info(
     `Order ${order.orderNumber} cancelled by ${req.user.email.address} - Reason: ${reason}`
   );
+
+  // Send push notification to customer
+  try {
+    const customer = await User.findById(order.customer.id);
+    if (customer) {
+      const customerTokens = customer.getActiveDeviceTokens();
+      
+      if (customerTokens && customerTokens.length > 0) {
+        logger.info(`[CANCEL NOTIFICATION] Sending to customer on ${customerTokens.length} device(s)`);
+        
+        for (const token of customerTokens) {
+          await notificationService.sendCustomNotification(
+            token,
+            '❌ Order Cancelled',
+            `Your order #${order.orderNumber} has been cancelled. ${reason ? 'Reason: ' + reason : ''}`,
+            {
+              type: 'ORDER_CANCELLED',
+              orderId: order._id.toString(),
+              orderNumber: order.orderNumber,
+              reason: reason || '',
+              timestamp: new Date().toISOString(),
+            }
+          );
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn('[CANCEL NOTIFICATION] Failed to send push notification:', err.message);
+  }
 
   res.status(200).json({
     status: 'success',

@@ -52,27 +52,36 @@ class NotificationService {
    * @param {string} deviceToken - FCM device token of the recipient
    */
   async sendOrderNotification(order, deviceToken) {
+    logger.info(`\n🔔 [FCM Service] sendOrderNotification called`);
+    logger.info(`📱 [FCM] Initialized: ${this.initialized}`);
+    logger.info(`📱 [FCM] Device Token: ${deviceToken ? deviceToken.substring(0, 30) + '...' : 'null'}`);
+    
     if (!this.initialized) {
-      logger.warn('⚠️  Firebase not initialized. Cannot send order notification.');
+      logger.error('❌ [FCM] Firebase not initialized. Cannot send order notification.');
+      logger.error('❌ [FCM] Check FIREBASE_SERVICE_ACCOUNT or FIREBASE_PROJECT_ID in .env');
       return false;
     }
 
     if (!deviceToken) {
-      logger.warn('⚠️  No device token provided. Cannot send notification.');
+      logger.error('❌ [FCM] No device token provided. Cannot send notification.');
       return false;
     }
 
     try {
+      logger.info(`📱 [FCM] Preparing notification message...`);
+      
+      const totalAmount = order.pricing?.finalAmount || order.totalAmount || 0;
+      
       const message = {
         notification: {
-          title: '🎉 New Order Received!',
-          body: `Order #${order.orderNumber || order._id.toString().slice(-6)} - ${order.items.length} items - $${order.totalAmount.toFixed(2)}`
+          title: '🎉 Order Placed Successfully!',
+          body: `Order #${order.orderNumber || order._id.toString().slice(-6)} - ${order.items.length} items - ₹${totalAmount.toFixed(2)}`
         },
         data: {
           orderId: order._id.toString(),
           orderNumber: order.orderNumber || '',
           type: 'NEW_ORDER',
-          totalAmount: order.totalAmount.toString(),
+          totalAmount: totalAmount.toString(),
           itemCount: order.items.length.toString(),
           timestamp: new Date().toISOString()
         },
@@ -95,15 +104,30 @@ class NotificationService {
         }
       };
 
+      logger.info(`📱 [FCM] Message prepared:`, {
+        title: message.notification.title,
+        body: message.notification.body,
+        orderId: message.data.orderId,
+        type: message.data.type
+      });
+
+      logger.info(`📱 [FCM] Sending to Firebase...`);
       const response = await admin.messaging().send(message);
-      logger.info(`✅ Order notification sent successfully. FCM Response: ${response}`);
+      
+      logger.info(`✅ [FCM] Order notification sent successfully!`);
+      logger.info(`✅ [FCM] Firebase Response: ${response}`);
+      logger.info(`✅ [FCM] Order: ${order.orderNumber}, Amount: ₹${order.totalAmount}`);
+      
       return true;
     } catch (error) {
-      logger.error('❌ Failed to send order notification:', {
-        error: error.message,
-        code: error.code,
-        orderId: order._id
-      });
+      logger.error(`❌ [FCM] Failed to send order notification`);
+      logger.error(`❌ [FCM] Error Message: ${error.message}`);
+      logger.error(`❌ [FCM] Error Code: ${error.code}`);
+      logger.error(`❌ [FCM] Order ID: ${order._id}`);
+      logger.error(`❌ [FCM] Device Token (first 30): ${deviceToken.substring(0, 30)}`);
+      if (error.stack) {
+        logger.error(`❌ [FCM] Stack Trace: ${error.stack}`);
+      }
       return false;
     }
   }

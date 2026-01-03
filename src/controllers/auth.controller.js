@@ -5,6 +5,7 @@ const User = require('../models/User');
 const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
 const logger = require('../utils/logger');
+const notificationService = require('../services/notification.service');
 
 /**
  * Generate JWT tokens and send response
@@ -35,6 +36,60 @@ const createSendToken = async (user, statusCode, res, message = 'Success') => {
 };
 
 /**
+ * Register device token for push notifications
+ * POST /api/v1/auth/device-token
+ * Protected route
+ */
+exports.registerDeviceToken = catchAsync(async (req, res, next) => {
+  const { token, platform, deviceId } = req.body;
+
+  if (!token || !platform) {
+    return next(new AppError('Token and platform are required', 400));
+  }
+
+  // Validate platform
+  if (!['ios', 'android', 'web'].includes(platform)) {
+    return next(new AppError('Platform must be ios, android, or web', 400));
+  }
+
+  // Add device token to user
+  await req.user.addDeviceToken(token, platform, deviceId);
+
+  logger.info(`Device token registered for user ${req.user.email.address} on ${platform}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Device token registered successfully',
+    data: {
+      tokenCount: req.user.deviceTokens.length,
+    },
+  });
+});
+
+/**
+ * Remove device token (on logout)
+ * DELETE /api/v1/auth/device-token
+ * Protected route
+ */
+exports.removeDeviceToken = catchAsync(async (req, res, next) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return next(new AppError('Token is required', 400));
+  }
+
+  // Remove device token from user
+  await req.user.removeDeviceToken(token);
+
+  logger.info(`Device token removed for user ${req.user.email.address}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Device token removed successfully',
+  });
+});
+
+/**
  * Register a new user
  * POST /api/v1/auth/register
  */
@@ -51,14 +106,17 @@ exports.register = catchAsync(async (req, res, next) => {
 
   logger.info(`[REGISTER] Attempt for email: ${email}, phone: ${phone}`);
 
+  // Generate email from phone if not provided
+  const userEmail = email || `${phone.replace(/[^\d]/g, '')}@tiptop.app`;
+
   // Check if user already exists
   const existingUser = await User.findOne({
-    $or: [{ 'email.address': email }, { 'phone.number': phone }],
+    $or: [{ 'email.address': userEmail }, { 'phone.number': phone }],
   });
 
   if (existingUser) {
-    if (existingUser.email.address === email) {
-      logger.warn(`[REGISTER] Failed - Email already exists: ${email}`);
+    if (existingUser.email.address === userEmail && email) {
+      logger.warn(`[REGISTER] Failed - Email already exists: ${userEmail}`);
       return next(new AppError('Email is already registered.', 400));
     }
     if (existingUser.phone.number === phone) {
@@ -97,7 +155,7 @@ exports.register = catchAsync(async (req, res, next) => {
       last: lastName,
     },
     email: {
-      address: email,
+      address: userEmail,
       isVerified: false,
     },
     password,
@@ -121,39 +179,21 @@ exports.register = catchAsync(async (req, res, next) => {
 
   logger.info(`[REGISTER] SUCCESS - New user created: ${user.email.address} (ID: ${user._id}, Role: ${user.role})`);
 
-  // Generate 6-digit OTP
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
-  
-  // Store OTP with 10-minute expiry
-  user.emailVerificationToken = hashedOTP;
-  user.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+  // Set user as verified by default (OTP disabled for now)
+  user.email.isVerified = true;
+  user.phone.isVerified = true;
   await user.save({ validateBeforeSave: false });
 
-  // Return response immediately (don't wait for email)
+  // Return response with verification already done
   res.status(201).json({
     status: 'success',
-    message: 'Account created! Please check your email for OTP.',
+    message: 'Account created successfully! You can now login.',
     data: {
       userId: user._id,
       email: user.email.address,
-      otpSent: true, // Always return true since we're sending async
+      verified: true,
     },
   });
-
-  // Send OTP email asynchronously (non-blocking)
-  const emailService = require('../services/email.service');
-  emailService.sendOTPEmail(user.email.address, otp, user.name)
-    .then(emailSent => {
-      if (emailSent) {
-        logger.info(`[REGISTER] OTP email sent successfully to: ${user.email.address}`);
-      } else {
-        logger.warn(`[REGISTER] Failed to send OTP email to: ${user.email.address}`);
-      }
-    })
-    .catch(err => {
-      logger.error(`[REGISTER] Error sending OTP email to: ${user.email.address}`, err);
-    });
 });
 
 /**
@@ -163,23 +203,26 @@ exports.register = catchAsync(async (req, res, next) => {
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
 
-  logger.info(`[LOGIN] Attempt for email: ${email}`);
+  logger.info(`[LOGIN] Attempt for identifier: ${email}`);
 
-  // 1) Check if email and password exist
+  // 1) Check if email/phone and password exist
   if (!email || !password) {
-    logger.warn('[LOGIN] Failed - Missing email or password');
-    return next(new AppError('Please provide email and password.', 400));
+    logger.warn('[LOGIN] Failed - Missing credentials');
+    return next(new AppError('Please provide email/phone and password.', 400));
   }
 
-  // 2) Find user and include password field
-  const user = await User.findOne({ 'email.address': email }).select(
-    '+password +isActive'
-  );
+  // 2) Find user by email OR phone number
+  const user = await User.findOne({
+    $or: [
+      { 'email.address': email },
+      { 'phone.number': email },
+    ],
+  }).select('+password +isActive');
 
   // 3) Check if user exists and password is correct
   if (!user || !(await user.comparePassword(password))) {
-    logger.warn(`[LOGIN] Failed - Incorrect credentials for email: ${email}`);
-    return next(new AppError('Incorrect email or password.', 401));
+    logger.warn(`[LOGIN] Failed - Incorrect credentials for: ${email}`);
+    return next(new AppError('Incorrect email/phone or password.', 401));
   }
 
   // 4) Check if user is active
@@ -193,20 +236,9 @@ exports.login = catchAsync(async (req, res, next) => {
     );
   }
 
-  // 5) Check if email is verified
-  if (!user.email.isVerified) {
-    logger.warn(`[LOGIN] Failed - Email not verified: ${email}`);
-    return res.status(403).json({
-      status: 'error',
-      message: 'Please verify your email first. Check your inbox for OTP.',
-      needsVerification: true,
-      email: user.email.address,
-    });
-  }
-
   logger.info(`[LOGIN] SUCCESS - User logged in: ${user.email.address} (ID: ${user._id}, Role: ${user.role})`);
 
-  // 5) Send token
+  // 5) Send token (verification check removed)
   createSendToken(user, 200, res, 'Login successful!');
 });
 

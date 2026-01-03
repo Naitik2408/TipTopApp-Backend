@@ -98,6 +98,13 @@ router.post('/me/favorites/:menuItemId',
 );
 
 // Remove item from favorites (customer only)
+// Register device token for push notifications
+router.post('/device-token', authController.registerDeviceToken);
+
+// Remove device token (on logout)
+router.delete('/device-token', authController.removeDeviceToken);
+
+// Remove item from favorites (customer only)
 router.delete('/me/favorites/:menuItemId',
   authMiddleware.restrictTo('customer'),
   require('../controllers/user.controller').removeFavoriteItem

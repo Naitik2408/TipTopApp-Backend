@@ -28,8 +28,7 @@ exports.registerSchema = Joi.object({
     )
     .required(),
 
-  email: Joi.string().trim().lowercase().email().required().messages({
-    'string.empty': 'Email is required',
+  email: Joi.string().trim().lowercase().email().messages({
     'string.email': 'Please provide a valid email address',
   }),
 
@@ -123,10 +122,18 @@ exports.registerSchema = Joi.object({
  * Validation schema for user login
  */
 exports.loginSchema = Joi.object({
-  email: Joi.string().trim().lowercase().email().required().messages({
-    'string.empty': 'Email is required',
-    'string.email': 'Please provide a valid email address',
-  }),
+  email: Joi.alternatives()
+    .try(
+      // Accept email format
+      Joi.string().trim().lowercase().email(),
+      // Or accept phone number format
+      Joi.string().pattern(/^(\+91)?[6-9]\d{9}$/)
+    )
+    .required()
+    .messages({
+      'string.empty': 'Email or phone number is required',
+      'alternatives.match': 'Please provide a valid email address or phone number',
+    }),
 
   password: Joi.string().required().messages({
     'string.empty': 'Password is required',
