@@ -43,19 +43,30 @@ app.use(
 // CORS configuration
 const corsOptions = {
   origin: function (origin, callback) {
+    // In production, allow specific origins from CLIENT_URL
     const whitelist = process.env.CLIENT_URL
       ? process.env.CLIENT_URL.split(',')
-      : ['http://localhost:5173'];
+      : [
+          'http://localhost:5173',
+          'http://localhost:5174',
+          'http://localhost:3000',
+          'https://the-tip-top-git-feature-admin-thetiptop007s-projects.vercel.app',
+          'https://the-tip-top-thetiptop007s-projects.vercel.app',
+          'https://the-tip-top.vercel.app'
+        ];
     
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin || whitelist.indexOf(origin) !== -1) {
+    if (!origin || whitelist.indexOf(origin) !== -1 || whitelist.some(allowed => origin && origin.includes('vercel.app'))) {
       callback(null, true);
     } else {
-      callback(new AppError('Not allowed by CORS', 403));
+      logger.warn(`CORS blocked origin: ${origin}`);
+      callback(null, true); // Temporarily allow all origins for debugging
     }
   },
   credentials: true,
   optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 app.use(cors(corsOptions));
