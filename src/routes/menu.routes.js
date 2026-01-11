@@ -30,6 +30,9 @@ router.get(
   menuController.getAllMenuItems
 );
 
+// Get menu statistics - Cache for 5 minutes (public for admin dashboard)
+router.get('/stats/overview', cacheMiddleware(300, 'menu'), menuController.getMenuStats);
+
 // Get menu item by ID - Cache for 10 minutes
 router.get('/:id', cacheMiddleware(600, 'menu'), menuController.getMenuItem);
 
@@ -39,9 +42,6 @@ router.get('/:id', cacheMiddleware(600, 'menu'), menuController.getMenuItem);
  */
 router.use(authMiddleware.protect);
 router.use(authMiddleware.restrictTo('admin'));
-
-// Get menu statistics (must be before /:id)
-router.get('/stats/overview', menuController.getMenuStats);
 
 // Create new menu item
 router.post(

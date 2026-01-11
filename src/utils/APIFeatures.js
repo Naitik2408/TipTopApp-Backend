@@ -46,6 +46,9 @@ class APIFeatures {
     if (this.queryString.search) {
       const searchTerm = this.queryString.search.trim().toLowerCase();
       
+      // Store search term for relevance sorting later
+      this._searchTerm = searchTerm;
+      
       // Get current query conditions
       const currentConditions = this.query.getQuery();
       
@@ -68,15 +71,21 @@ class APIFeatures {
         'rotti': 'roti',
       };
       
-      // Build search patterns
+      // Build search patterns - default fields for menu items
       const searchPatterns = [
-        // 1. Direct substring match (most common case)
+        // Menu item fields
         { name: { $regex: simplePattern, $options: 'i' } },
         { description: { $regex: simplePattern, $options: 'i' } },
         { categories: { $regex: simplePattern, $options: 'i' } },
+        
+        // User fields (nested)
+        { 'name.first': { $regex: simplePattern, $options: 'i' } },
+        { 'name.last': { $regex: simplePattern, $options: 'i' } },
+        { 'email.address': { $regex: simplePattern, $options: 'i' } },
+        { 'phone.number': { $regex: simplePattern, $options: 'i' } },
       ];
       
-      // 2. Check for common typo corrections
+      // Check for common typo corrections
       const correctedTerm = typoMappings[searchTerm];
       if (correctedTerm) {
         const correctedPattern = correctedTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,7 +95,7 @@ class APIFeatures {
         );
       }
       
-      // 3. Flexible pattern for typo tolerance (allows 1-2 character differences)
+      // Flexible pattern for typo tolerance (allows 1-2 character differences)
       if (searchTerm.length >= 4) {
         // Create pattern with optional characters between each letter
         const chars = searchTerm.split('');
@@ -103,16 +112,20 @@ class APIFeatures {
         
         searchPatterns.push(
           { name: { $regex: flexiblePattern, $options: 'i' } },
-          { description: { $regex: flexiblePattern, $options: 'i' } }
+          { description: { $regex: flexiblePattern, $options: 'i' } },
+          { 'name.first': { $regex: flexiblePattern, $options: 'i' } },
+          { 'name.last': { $regex: flexiblePattern, $options: 'i' } }
         );
       }
       
-      // 4. Word-by-word matching for multi-word queries
+      // Word-by-word matching for multi-word queries
       const words = searchTerm.split(/\s+/).filter(w => w.length >= 3);
       words.forEach(word => {
         const wordRegex = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         searchPatterns.push(
-          { name: { $regex: wordRegex, $options: 'i' } }
+          { name: { $regex: wordRegex, $options: 'i' } },
+          { 'name.first': { $regex: wordRegex, $options: 'i' } },
+          { 'name.last': { $regex: wordRegex, $options: 'i' } }
         );
       });
       
@@ -205,35 +218,129 @@ class APIFeatures {
    * @returns {Promise<Object>} Results with pagination metadata
    */
   async execute(Model) {
-    // Execute the query
-    const docs = await this.query;
-
-    // Get total count for pagination metadata
+    // Get total count for pagination metadata FIRST
     const page = parseInt(this.queryString.page, 10) || 1;
     const limit = parseInt(this.queryString.limit, 10) || 10;
-
-    // Build the same filter for counting
-    const queryObj = { ...this.queryString };
-    const excludedFields = ['page', 'sort', 'limit', 'fields', 'search', 'fuzzy'];
-    excludedFields.forEach((field) => delete queryObj[field]);
-
-    let queryStr = JSON.stringify(queryObj);
-    queryStr = queryStr.replace(/\b(gte|gt|lte|lt|in|nin)\b/g, (match) => `$${match}`);
-    const filterObj = JSON.parse(queryStr);
-
-    // Add search to filter if exists (use regex for consistency)
-    if (this.queryString.search) {
-      const searchTerm = this.queryString.search.trim();
-      const searchRegex = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // For search relevance, we need to get ALL matching documents before pagination
+    if (this._searchTerm) {
+      // Clone the query without skip/limit for relevance sorting
+      const queryWithoutPagination = this.query.model.find(this.query.getQuery());
+      let allDocs = await queryWithoutPagination.select('-__v').exec();
       
-      filterObj.$or = [
-        { name: { $regex: searchRegex, $options: 'i' } },
-        { description: { $regex: searchRegex, $options: 'i' } },
-        { categories: { $regex: searchRegex, $options: 'i' } },
-      ];
+      if (allDocs.length > 0) {
+        const searchTerm = this._searchTerm.toLowerCase();
+        
+        allDocs = allDocs.map(doc => {
+          const docObj = doc.toObject ? doc.toObject() : doc;
+          
+          // Handle both MenuItem and User documents
+          let searchableText = '';
+          
+          // For MenuItem
+          if (docObj.name && typeof docObj.name === 'string') {
+            searchableText = docObj.name.toLowerCase();
+          }
+          // For User
+          else if (docObj.name && typeof docObj.name === 'object') {
+            const firstName = docObj.name.first || '';
+            const lastName = docObj.name.last || '';
+            searchableText = `${firstName} ${lastName}`.toLowerCase().trim();
+          }
+          
+          const description = (docObj.description || '').toLowerCase();
+          const email = (docObj.email?.address || '').toLowerCase();
+          const phone = (docObj.phone?.number || '').toLowerCase();
+          
+          let relevanceScore = 0;
+          
+          // Exact match in name (highest priority)
+          if (searchableText === searchTerm) {
+            relevanceScore = 1000;
+          }
+          // Exact match in email
+          else if (email === searchTerm) {
+            relevanceScore = 950;
+          }
+          // Starts with search term in name
+          else if (searchableText.startsWith(searchTerm)) {
+            relevanceScore = 900;
+          }
+          // Exact match in phone
+          else if (phone.includes(searchTerm)) {
+            relevanceScore = 850;
+          }
+          // Exact word match in name (e.g., "chicken korma" matches "chicken")
+          else if (searchableText.split(/\s+/).includes(searchTerm)) {
+            relevanceScore = 800;
+          }
+          // Contains search term in email
+          else if (email.includes(searchTerm)) {
+            relevanceScore = 750;
+          }
+          // Contains search term in name
+          else if (searchableText.includes(searchTerm)) {
+            // Higher score if match is closer to the start
+            const position = searchableText.indexOf(searchTerm);
+            relevanceScore = 700 - (position * 2);
+          }
+          // Match in description
+          else if (description.includes(searchTerm)) {
+            relevanceScore = 300;
+          }
+          // Fuzzy/partial matches
+          else {
+            relevanceScore = 100;
+          }
+          
+          // Boost score based on rating and popularity (for MenuItems)
+          if (docObj.rating) {
+            relevanceScore += (docObj.rating || 0) * 10;
+          }
+          if (docObj.reviews) {
+            relevanceScore += Math.min((docObj.reviews || 0), 50);
+          }
+          
+          // Boost score for active users
+          if (docObj.isActive !== undefined && docObj.isActive) {
+            relevanceScore += 20;
+          }
+          
+          return { doc, relevanceScore };
+        });
+        
+        // Sort by relevance score (highest first)
+        allDocs.sort((a, b) => b.relevanceScore - a.relevanceScore);
+        
+        // Extract just the documents
+        allDocs = allDocs.map(item => item.doc);
+        
+        // Apply pagination AFTER sorting
+        const skip = (page - 1) * limit;
+        const docs = allDocs.slice(skip, skip + limit);
+        const total = allDocs.length;
+        const totalPages = Math.ceil(total / limit);
+        
+        return {
+          data: docs,
+          pagination: {
+            currentPage: page,
+            totalPages: totalPages,
+            totalItems: total,
+            itemsPerPage: limit,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+          },
+        };
+      }
     }
+    
+    // Execute the query normally (no search term or no results)
+    const docs = await this.query;
 
-    const total = await Model.countDocuments(filterObj);
+    // Use the actual query conditions for counting instead of rebuilding
+    const countQuery = this.query.model.find(this.query.getQuery());
+    const total = await countQuery.countDocuments();
     const totalPages = Math.ceil(total / limit);
 
     return {

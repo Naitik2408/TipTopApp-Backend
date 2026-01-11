@@ -203,7 +203,9 @@ exports.register = catchAsync(async (req, res, next) => {
 exports.login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
 
-  logger.info(`[LOGIN] Attempt for identifier: ${email}`);
+  logger.info(`\n========== LOGIN ATTEMPT ==========`);
+  logger.info(`[LOGIN] Identifier provided: ${email}`);
+  logger.info(`[LOGIN] Password length: ${password ? password.length : 0}`);
 
   // 1) Check if email/phone and password exist
   if (!email || !password) {
@@ -211,23 +213,68 @@ exports.login = catchAsync(async (req, res, next) => {
     return next(new AppError('Please provide email/phone and password.', 400));
   }
 
-  // 2) Find user by email OR phone number
+  // 2) Normalize phone number - remove +91 prefix if present
+  let searchIdentifier = email;
+  let alternateIdentifier = email;
+  
+  // If it looks like a phone number, create alternate search patterns
+  if (/^(\+91)?[6-9]\d{9}$/.test(email)) {
+    // Remove +91 if present
+    const phoneWithoutPrefix = email.replace(/^\+91/, '');
+    // Add +91 if not present
+    const phoneWithPrefix = email.startsWith('+91') ? email : `+91${email}`;
+    
+    searchIdentifier = phoneWithoutPrefix;
+    alternateIdentifier = phoneWithPrefix;
+    
+    logger.info(`[LOGIN] Phone number detected`);
+    logger.info(`[LOGIN] Searching with: ${searchIdentifier} OR ${alternateIdentifier}`);
+  }
+  
+  logger.info(`[LOGIN] Searching for user with email OR phone: ${searchIdentifier}`);
+  
   const user = await User.findOne({
     $or: [
       { 'email.address': email },
-      { 'phone.number': email },
+      { 'phone.number': searchIdentifier },
+      { 'phone.number': alternateIdentifier },
     ],
   }).select('+password +isActive');
+
+  logger.info(`[LOGIN] User found: ${user ? 'YES' : 'NO'}`);
+  
+  if (user) {
+    logger.info(`[LOGIN] User details:`);
+    logger.info(`  - ID: ${user._id}`);
+    logger.info(`  - Name: ${user.name.first} ${user.name.last}`);
+    logger.info(`  - Email: ${user.email.address}`);
+    logger.info(`  - Phone: ${user.phone.number}`);
+    logger.info(`  - Role: ${user.role}`);
+    logger.info(`  - Active: ${user.isActive}`);
+    logger.info(`  - Has Password: ${user.password ? 'YES' : 'NO'}`);
+    
+    // Test password comparison
+    const passwordMatch = await user.comparePassword(password);
+    logger.info(`  - Password Match: ${passwordMatch ? 'YES' : 'NO'}`);
+  } else {
+    logger.warn(`[LOGIN] No user found with identifier: ${email}`);
+    logger.warn(`[LOGIN] Tried to match:`);
+    logger.warn(`  - email.address: ${email}`);
+    logger.warn(`  - phone.number: ${searchIdentifier}`);
+    logger.warn(`  - phone.number: ${alternateIdentifier}`);
+  }
 
   // 3) Check if user exists and password is correct
   if (!user || !(await user.comparePassword(password))) {
     logger.warn(`[LOGIN] Failed - Incorrect credentials for: ${email}`);
+    logger.info(`========================================\n`);
     return next(new AppError('Incorrect email/phone or password.', 401));
   }
 
   // 4) Check if user is active
   if (!user.isActive) {
     logger.warn(`[LOGIN] Failed - Account deactivated: ${email}`);
+    logger.info(`========================================\n`);
     return next(
       new AppError(
         'Your account has been deactivated. Please contact support.',
@@ -237,6 +284,7 @@ exports.login = catchAsync(async (req, res, next) => {
   }
 
   logger.info(`[LOGIN] SUCCESS - User logged in: ${user.email.address} (ID: ${user._id}, Role: ${user.role})`);
+  logger.info(`========================================\n`);
 
   // 5) Send token (verification check removed)
   createSendToken(user, 200, res, 'Login successful!');

@@ -13,20 +13,34 @@ const logger = require('../utils/logger');
 exports.registerDeliveryPartner = catchAsync(async (req, res, next) => {
   const { name, email, phone, password, vehicleType } = req.body;
 
+  logger.info('\n========== DELIVERY PARTNER REGISTRATION ==========');
+  logger.info(`[REGISTER] Received data:`);
+  logger.info(`  - Name: ${name}`);
+  logger.info(`  - Email: ${email}`);
+  logger.info(`  - Phone: ${phone}`);
+  logger.info(`  - Password length: ${password ? password.length : 0}`);
+  logger.info(`  - Vehicle Type: ${vehicleType}`);
+
   // Validate required fields
   if (!name || !email || !phone || !password || !vehicleType) {
     return next(new AppError('Please provide all required fields: name, email, phone, password, vehicleType', 400));
   }
 
+  // Normalize phone number - remove +91 prefix for consistent storage
+  const normalizedPhone = phone.replace(/^\+91/, '');
+  logger.info(`  - Normalized Phone: ${normalizedPhone}`);
+
   // Check if user already exists
   const existingUser = await User.findOne({ 
     $or: [
       { 'email.address': email },
-      { phone }
+      { 'phone.number': normalizedPhone },
+      { 'phone.number': phone }
     ]
   });
 
   if (existingUser) {
+    logger.warn(`[REGISTER] User already exists - Email: ${existingUser.email.address}, Phone: ${existingUser.phone.number}`);
     return next(new AppError('User with this email or phone already exists', 400));
   }
 
@@ -41,7 +55,7 @@ exports.registerDeliveryPartner = catchAsync(async (req, res, next) => {
       isVerified: true,
     },
     phone: {
-      number: phone,
+      number: normalizedPhone,
       isVerified: true,
     },
     password,
@@ -58,7 +72,15 @@ exports.registerDeliveryPartner = catchAsync(async (req, res, next) => {
     },
   });
 
-  logger.info(`New delivery partner registered: ${deliveryPartner.email.address} (${vehicleType})`);
+  logger.info(`[REGISTER] SUCCESS - Delivery partner created:`);
+  logger.info(`  - ID: ${deliveryPartner._id}`);
+  logger.info(`  - Name: ${deliveryPartner.name.first} ${deliveryPartner.name.last}`);
+  logger.info(`  - Email: ${deliveryPartner.email.address}`);
+  logger.info(`  - Phone: ${deliveryPartner.phone.number}`);
+  logger.info(`  - Role: ${deliveryPartner.role}`);
+  logger.info(`  - Vehicle: ${vehicleType}`);
+  logger.info(`  - Password saved: ${deliveryPartner.password ? 'YES (hashed)' : 'NO'}`);
+  logger.info('====================================================\n');
 
   res.status(201).json({
     status: 'success',
@@ -113,6 +135,93 @@ exports.deleteDeliveryPartner = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     message: 'Delivery partner deleted successfully',
+  });
+});
+
+/**
+ * Update delivery partner
+ * PATCH /api/v1/delivery/partner/:id
+ * Admin only
+ */
+exports.updateDeliveryPartner = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { name, email, phone, vehicleType, password } = req.body;
+
+  // Find delivery partner
+  const deliveryPartner = await User.findById(id);
+
+  if (!deliveryPartner) {
+    return next(new AppError('Delivery partner not found', 404));
+  }
+
+  if (deliveryPartner.role !== 'delivery') {
+    return next(new AppError('User is not a delivery partner', 400));
+  }
+
+  // Update fields if provided
+  if (name) {
+    const nameParts = name.split(' ');
+    deliveryPartner.name.first = nameParts[0] || name;
+    deliveryPartner.name.last = nameParts.slice(1).join(' ') || nameParts[0];
+  }
+
+  if (email) {
+    // Check if email is already taken by another user
+    const existingUser = await User.findOne({ 
+      'email.address': email,
+      _id: { $ne: id }
+    });
+    if (existingUser) {
+      return next(new AppError('Email is already taken', 400));
+    }
+    deliveryPartner.email.address = email;
+  }
+
+  if (phone) {
+    // Check if phone is already taken by another user
+    const existingUser = await User.findOne({ 
+      'phone.number': phone,
+      _id: { $ne: id }
+    });
+    if (existingUser) {
+      return next(new AppError('Phone number is already taken', 400));
+    }
+    deliveryPartner.phone.number = phone;
+  }
+
+  if (vehicleType) {
+    if (!deliveryPartner.deliveryData) {
+      deliveryPartner.deliveryData = {};
+    }
+    if (!deliveryPartner.deliveryData.vehicleInfo) {
+      deliveryPartner.deliveryData.vehicleInfo = {};
+    }
+    deliveryPartner.deliveryData.vehicleInfo.type = vehicleType;
+  }
+
+  if (password) {
+    if (password.length < 8) {
+      return next(new AppError('Password must be at least 8 characters long', 400));
+    }
+    deliveryPartner.password = password;
+  }
+
+  await deliveryPartner.save({ validateBeforeSave: false });
+
+  logger.info(`Delivery partner updated: ${deliveryPartner.email.address} by admin ${req.user.email.address}`);
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Delivery partner updated successfully',
+    data: {
+      partner: {
+        id: deliveryPartner._id,
+        name: `${deliveryPartner.name.first} ${deliveryPartner.name.last}`,
+        email: deliveryPartner.email.address,
+        phone: deliveryPartner.phone.number,
+        vehicleType: deliveryPartner.deliveryData?.vehicleInfo?.type,
+      },
+    },
   });
 });
 

@@ -191,16 +191,12 @@ exports.updateMenuItem = catchAsync(async (req, res, next) => {
 });
 
 /**
- * Delete menu item (soft delete - mark as unavailable)
+ * Delete menu item (permanent delete)
  * DELETE /api/v1/menu/:id
  * Admin only
  */
 exports.deleteMenuItem = catchAsync(async (req, res, next) => {
-  const menuItem = await MenuItem.findByIdAndUpdate(
-    req.params.id,
-    { isAvailable: false },
-    { new: true }
-  );
+  const menuItem = await MenuItem.findByIdAndDelete(req.params.id);
 
   if (!menuItem) {
     return next(new AppError('Menu item not found', 404));

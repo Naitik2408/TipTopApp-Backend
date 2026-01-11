@@ -48,24 +48,36 @@ exports.createOrderSchema = Joi.object({
     }),
 
   deliveryAddress: Joi.object({
-    street: Joi.string().trim().required().messages({
+    street: Joi.string().trim().min(5).max(200).required().messages({
       'string.empty': 'Street address is required',
+      'string.min': 'Street address must be at least 5 characters',
+      'string.max': 'Street address is too long (max 200 characters)',
     }),
-    apartment: Joi.string().trim(),
-    city: Joi.string().trim().required().messages({
+    apartment: Joi.string().trim().max(100).allow('').optional().messages({
+      'string.max': 'Apartment info is too long (max 100 characters)',
+    }),
+    city: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s]+$/).required().messages({
       'string.empty': 'City is required',
+      'string.min': 'City name must be at least 2 characters',
+      'string.max': 'City name is too long (max 50 characters)',
+      'string.pattern.base': 'City name should only contain letters',
     }),
-    state: Joi.string().trim().required().messages({
+    state: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s]+$/).required().messages({
       'string.empty': 'State is required',
+      'string.min': 'State name must be at least 2 characters',
+      'string.max': 'State name is too long (max 50 characters)',
+      'string.pattern.base': 'State name should only contain letters',
     }),
     zipCode: Joi.string()
       .pattern(/^\d{6}$/)
       .required()
       .messages({
         'string.empty': 'Zip code is required',
-        'string.pattern.base': 'Please provide a valid 6-digit zip code',
+        'string.pattern.base': 'Zip code must be exactly 6 digits',
       }),
-    landmark: Joi.string().trim(),
+    landmark: Joi.string().trim().max(100).allow('').optional().messages({
+      'string.max': 'Landmark is too long (max 100 characters)',
+    }),
     coordinates: Joi.object({
       type: Joi.string().valid('Point').default('Point'),
       coordinates: Joi.array()

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const addressController = require('../controllers/address.controller');
 const authMiddleware = require('../middlewares/auth');
+const addressValidator = require('../validators/address.validator');
 
 // All routes require authentication and customer role
 router.use(authMiddleware.protect);
@@ -11,11 +12,11 @@ router.use(authMiddleware.restrictTo('customer'));
 router
   .route('/')
   .get(addressController.getAddresses)
-  .post(addressController.addAddress);
+  .post(addressValidator.validateAddAddress, addressController.addAddress);
 
 router
   .route('/:addressId')
-  .patch(addressController.updateAddress)
+  .patch(addressValidator.validateUpdateAddress, addressController.updateAddress)
   .delete(addressController.deleteAddress);
 
 router.patch('/:addressId/default', addressController.setDefaultAddress);

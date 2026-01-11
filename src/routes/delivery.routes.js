@@ -67,6 +67,13 @@ router.delete(
   deliveryController.deleteDeliveryPartner
 );
 
+// Update delivery partner
+router.patch(
+  '/partner/:id',
+  authMiddleware.restrictTo('admin'),
+  deliveryController.updateDeliveryPartner
+);
+
 // Get delivery statistics
 router.get(
   '/stats/overview',

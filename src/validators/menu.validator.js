@@ -10,16 +10,8 @@ exports.createMenuItemSchema = Joi.object({
     'string.max': 'Name cannot exceed 100 characters',
   }),
 
-  description: Joi.string().trim().min(10).max(1000).required().messages({
-    'string.empty': 'Description is required',
-    'string.min': 'Description must be at least 10 characters',
+  description: Joi.string().trim().allow('').max(1000).messages({
     'string.max': 'Description cannot exceed 1000 characters',
-  }),
-
-  price: Joi.number().min(0).required().messages({
-    'number.base': 'Price must be a number',
-    'number.min': 'Price cannot be negative',
-    'any.required': 'Price is required',
   }),
 
   image: Joi.string().uri().required().messages({
@@ -27,45 +19,84 @@ exports.createMenuItemSchema = Joi.object({
     'string.uri': 'Please provide a valid image URL',
   }),
 
+  // Price Variants - required
+  priceVariants: Joi.array()
+    .items(
+      Joi.object({
+        quantity: Joi.string()
+          .valid('Quarter', 'Half', 'Full', '2PCS', '4PCS', '8PCS', '16PCS')
+          .required()
+          .messages({
+            'any.only': 'Quantity must be Quarter, Half, Full, 2PCS, 4PCS, 8PCS, or 16PCS',
+            'any.required': 'Quantity is required for price variant'
+          }),
+        price: Joi.number().min(0).required().messages({
+          'number.base': 'Price must be a number',
+          'number.min': 'Price cannot be negative',
+          'any.required': 'Price is required for price variant',
+        }),
+      })
+    )
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'At least one price variant is required',
+      'any.required': 'Price variants are required',
+    }),
+
+  // Categories - required array
+  categories: Joi.array()
+    .items(Joi.string())
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'At least one category is required',
+      'any.required': 'Categories are required',
+    }),
+
+  rating: Joi.number().min(0).max(5).default(4.0).messages({
+    'number.min': 'Rating must be between 0 and 5',
+    'number.max': 'Rating must be between 0 and 5',
+  }),
+
+  reviews: Joi.number().integer().min(0).default(0),
+
+  isAvailable: Joi.boolean().default(true),
+
+  isActive: Joi.boolean().default(true),
+
+  // Legacy fields for backward compatibility (optional)
+  price: Joi.number().min(0).messages({
+    'number.base': 'Price must be a number',
+    'number.min': 'Price cannot be negative',
+  }),
+
   images: Joi.array().items(Joi.string().uri()).max(5).messages({
     'array.max': 'Maximum 5 images allowed',
   }),
 
   category: Joi.object({
-    main: Joi.string()
-      .required()
-      .messages({
-        'string.empty': 'Main category is required',
-      }),
-    sub: Joi.array().items(Joi.string()).messages({
-      'array.base': 'Sub-categories must be an array of strings',
-    }),
-    tags: Joi.array().items(Joi.string()).max(10).messages({
-      'array.max': 'Maximum 10 tags allowed',
-    }),
-  }).required(),
+    main: Joi.string(),
+    sub: Joi.array().items(Joi.string()),
+    tags: Joi.array().items(Joi.string()).max(10),
+  }),
 
   plateQuantity: Joi.string()
     .valid('Full', 'Half', 'Quarter')
-    .default('Full')
     .messages({
       'any.only': 'Plate quantity must be Full, Half, or Quarter',
     }),
 
-  isVegetarian: Joi.boolean().default(true),
+  isVegetarian: Joi.boolean(),
 
-  isAvailable: Joi.boolean().default(true),
-
-  prepTime: Joi.number().integer().min(1).max(180).required().messages({
+  prepTime: Joi.number().integer().min(1).max(180).messages({
     'number.base': 'Preparation time must be a number',
     'number.min': 'Preparation time must be at least 1 minute',
     'number.max': 'Preparation time cannot exceed 180 minutes',
-    'any.required': 'Preparation time is required',
   }),
 
   spiceLevel: Joi.string()
     .valid('mild', 'medium', 'hot', 'extra-hot')
-    .default('medium')
     .messages({
       'any.only': 'Spice level must be mild, medium, hot, or extra-hot',
     }),
@@ -148,17 +179,57 @@ exports.updateMenuItemSchema = Joi.object({
     'string.max': 'Name cannot exceed 100 characters',
   }),
 
-  description: Joi.string().trim().min(10).max(1000).messages({
-    'string.min': 'Description must be at least 10 characters',
+  description: Joi.string().trim().allow('').max(1000).messages({
     'string.max': 'Description cannot exceed 1000 characters',
-  }),
-
-  price: Joi.number().min(0).messages({
-    'number.min': 'Price cannot be negative',
   }),
 
   image: Joi.string().uri().messages({
     'string.uri': 'Please provide a valid image URL',
+  }),
+
+  // Price Variants
+  priceVariants: Joi.array()
+    .items(
+      Joi.object({
+        quantity: Joi.string()
+          .valid('Quarter', 'Half', 'Full', '2PCS', '4PCS', '8PCS', '16PCS')
+          .required()
+          .messages({
+            'any.only': 'Quantity must be Quarter, Half, Full, 2PCS, 4PCS, 8PCS, or 16PCS',
+          }),
+        price: Joi.number().min(0).required().messages({
+          'number.base': 'Price must be a number',
+          'number.min': 'Price cannot be negative',
+        }),
+      })
+    )
+    .min(1)
+    .messages({
+      'array.min': 'At least one price variant is required',
+    }),
+
+  // Categories
+  categories: Joi.array()
+    .items(Joi.string())
+    .min(1)
+    .messages({
+      'array.min': 'At least one category is required',
+    }),
+
+  rating: Joi.number().min(0).max(5).messages({
+    'number.min': 'Rating must be between 0 and 5',
+    'number.max': 'Rating must be between 0 and 5',
+  }),
+
+  reviews: Joi.number().integer().min(0),
+
+  isAvailable: Joi.boolean(),
+
+  isActive: Joi.boolean(),
+
+  // Legacy fields for backward compatibility
+  price: Joi.number().min(0).messages({
+    'number.min': 'Price cannot be negative',
   }),
 
   images: Joi.array().items(Joi.string().uri()).max(5).messages({
@@ -178,7 +249,6 @@ exports.updateMenuItemSchema = Joi.object({
     }),
 
   isVegetarian: Joi.boolean(),
-  isAvailable: Joi.boolean(),
 
   prepTime: Joi.number().integer().min(1).max(180).messages({
     'number.min': 'Preparation time must be at least 1 minute',
@@ -248,7 +318,6 @@ exports.updateMenuItemSchema = Joi.object({
   // Prevent updating certain fields
   slug: Joi.forbidden(),
   stats: Joi.forbidden(),
-  rating: Joi.forbidden(),
   reviewCount: Joi.forbidden(),
 });
 
@@ -311,16 +380,28 @@ exports.menuQuerySchema = Joi.object({
  */
 exports.validate = (schema) => {
   return (req, res, next) => {
+    console.log('=== VALIDATION DEBUG ===');
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('Request Path:', req.path);
+    console.log('Request Method:', req.method);
+    
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
       stripUnknown: true,
     });
 
     if (error) {
+      console.log('=== VALIDATION FAILED ===');
+      console.log('Validation Error Details:', JSON.stringify(error.details, null, 2));
+      
       const errors = error.details.map((detail) => ({
         field: detail.path.join('.'),
         message: detail.message,
+        type: detail.type,
+        context: detail.context
       }));
+
+      console.log('Formatted Errors:', JSON.stringify(errors, null, 2));
 
       return res.status(400).json({
         status: 'fail',
@@ -329,6 +410,9 @@ exports.validate = (schema) => {
       });
     }
 
+    console.log('=== VALIDATION PASSED ===');
+    console.log('Validated Value:', JSON.stringify(value, null, 2));
+    
     req.body = value;
     next();
   };

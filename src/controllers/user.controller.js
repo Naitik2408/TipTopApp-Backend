@@ -10,10 +10,11 @@ const logger = require('../utils/logger');
  * Admin only
  */
 exports.getAllUsers = catchAsync(async (req, res, next) => {
-  const features = new APIFeatures(User.find(), req.query)
+  // Don't use limitFields for users - we need all user data except sensitive fields
+  const features = new APIFeatures(User.find().select('-password -passwordResetToken -passwordResetExpires'), req.query)
     .filter()
+    .search() // Add search functionality
     .sort()
-    .limitFields()
     .paginate();
 
   const result = await features.execute(User);
@@ -194,9 +195,10 @@ exports.getUsersByRole = catchAsync(async (req, res, next) => {
     return next(new AppError('Invalid role', 400));
   }
 
-  const features = new APIFeatures(User.find({ role }), req.query)
+  // Don't use limitFields for users - we need all customer data
+  const features = new APIFeatures(User.find({ role }).select('-password -passwordResetToken -passwordResetExpires'), req.query)
+    .search()
     .sort()
-    .limitFields()
     .paginate();
 
   const result = await features.execute(User);

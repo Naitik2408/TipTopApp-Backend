@@ -34,6 +34,8 @@ exports.updateSettings = catchAsync(async (req, res, next) => {
     siteName,
     contactEmail,
     contactPhone,
+    businessAddress,
+    website,
     notificationEmails,
     minimumOrderAmount,
     taxRate,
@@ -48,6 +50,8 @@ exports.updateSettings = catchAsync(async (req, res, next) => {
   if (siteName !== undefined) settings.siteName = siteName;
   if (contactEmail !== undefined) settings.contactEmail = contactEmail;
   if (contactPhone !== undefined) settings.contactPhone = contactPhone;
+  if (businessAddress !== undefined) settings.businessAddress = businessAddress;
+  if (website !== undefined) settings.website = website;
   if (notificationEmails !== undefined) settings.notificationEmails = notificationEmails;
   if (minimumOrderAmount !== undefined) settings.minimumOrderAmount = minimumOrderAmount;
   if (taxRate !== undefined) settings.taxRate = taxRate;
